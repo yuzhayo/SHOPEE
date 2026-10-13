@@ -1295,3 +1295,21 @@ normalized on load — no store migration). Proved his delete worked via bridge
 
 **Turn 86 outcome — v45 live (45,505 B), stuck queue cleared on production**
 (pending-deletes.json now [], both tombstones retired with loud logs after 3 pushes).
+
+**Turn 87 — Jack asked about notes/docs.** Audited: notes current every turn, PLAN
+current, RUNBOOK had 2 gaps — closed: (1) SHEET-TOKEN.txt must equal the TOKEN line
+in SHEET-SCRIPT.js (today''s lockout cause), (2) tombstone expiry behavior. Pushed.
+No taps.
+
+**Turn 88 — Full clean bill + review package.** Drift resolved: his 09:43 delete worked,
+his 09:45 re-paste recreated the row (with live-OCR names AHMAD ASRUL HABIBI /
+msglow.pearlindah — name reader proven on a real shot); store 45 = Sheet 45. Queues
+empty ([] + no armed mode), unit inactive (correct), webhook pending 0, only errors =
+my own synthetic-chat probes (harmless). Review set given: bot.mjs → harness (runs
+offline, 129 checks) → SHEET-SCRIPT.js → ear.mjs → spike/* → workflows+toml; secrets/
+notebook/screenshots/logs excluded (gitignored already — send the repo link as-is).
+
+**Turn 89 — REVIEW folder built.** 15 files flat (bot, harness, redacted Sheet script,
+ear, 7 spike tools, 2 workflows, toml, runbook). Removed 10 stale experiment scripts;
+SHEET-SCRIPT.js ships with TOKEN redacted (live key). REVIEW/ git-ignored. Secret
+scan clean (only the public site URL remains).
