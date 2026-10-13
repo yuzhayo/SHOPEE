@@ -1,0 +1,6 @@
+[build]
+  publish = "netlify-ear"
+
+[functions]
+  directory = "netlify-ear/netlify/functions"
+  node_bundler = "esbuild"

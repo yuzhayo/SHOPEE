@@ -6,7 +6,7 @@
 /WEBHOOK-SECRET.txt
 /NETLIFY-TOKEN.txt
 *-KEY.txt
-*-TOKEN.txt
+*TOKEN*.txt
 *SECRET*.txt
 *.key
 *.pem
