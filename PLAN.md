@@ -291,3 +291,5 @@ green on new code. Left: his Sheet v3.2 re-paste + real pastes.**
 
 **Update (turn 55) — /today + repeat-offender line + /find + /flag live. No DM lock,
 no backups (his calls). Guided /update still parked.**
+
+**Update (turn 57) — guided /update live (screenshot-alone works). Typed form retired.**

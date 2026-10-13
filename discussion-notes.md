@@ -1096,3 +1096,25 @@ empowered, his call), backups REJECTED (Sheet is the backup). Built:
   + /unflag. Flag warning line on T1/T2/T3/T11/T12 when that order''s driver is flagged.
   Flags VM-local (flagged-drivers.json), NOT Sheet-synced. T1 exact test untouched
   (warning only fires when flagged). Guided /update + /cancel still parked awaiting go.
+
+**Turn 55 outcome — v43 live.** Run 38380341811 success, VM 41,797 B = local.
+
+**Turn 56 — Jack: "does current support update when i just send screenshot?"**
+Answer: NO. Verified: backfill() is called ONLY on the number+photo dup branch.
+Shot-only hit = read-only CHECKING + owner history (S15d proves it); miss = NO DATA;
+unreadable = T8; non-Shopee = T9. Offered: extend fill to shot-only lookups (single
+question), guided /update still parked.
+
+---
+
+**Turn 57 — Guided /update (screenshot-only included) BUILT + SHIPPED (123/123).**
+
+Replaces the typed form (deleted + its tests). Bare /update arms a 10-min per-chat mode
+(pending-updates.json, no store migration); optional #no/orderID narrows the target.
+Next screenshot — WITH number or ALONE (keys point at the owner) — becomes fill
+material: blanks filled + wrongs corrected (driver/customer), UPDATED reply with
+old → new lines, mode consumed. Guards: order must match (miss → NO DATA, mode stays;
+targeted mismatch → waiting reply); wrong-number → T4; unreadable → T7/T9, mode stays;
+no-keys never consumes; non-photo messages run normally; expiry falls back silently.
+/cancel stops it (or "nothing to cancel"). Corrections ride self-heal — no script change.
+RUNBOOK recipe updated.

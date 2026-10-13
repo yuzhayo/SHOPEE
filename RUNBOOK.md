@@ -31,7 +31,7 @@ Secrets (files only, never typed into chat): `VPS-KEY.txt` (VM API key),
 - **Ban someone**: `/ban 0857xxxx reason` — or type `banned` in that row's **status** cell in the Sheet; the bot picks it up on the next paste.
 - **Unban**: `/unban 0857xxxx` or set the cell back to `not banned`.
 - **Complete blank cells**: re-paste an order's screenshot + number — empty driver/customer cells fill in by themselves (reply stays CHECKING).
-- **Fix a wrong name**: `/update 33013...0713 driver RAHMAT FADLI` — or `/update 0857xxxx #531 customer Siti`. Only driver/customer can be corrected (counts, dates and verdicts stay computed).
+- **Fix empty or wrong cells**: `/update` (optionally `/update #531`) → bot tells you to send the screenshot, alone or with the number → fills blanks AND corrects wrong driver/customer. Order number must match a recorded order. One screenshot per arming, 10-minute expiry, `/cancel` stops it.
 - **Remove an order**: `/delete 33013...0713` — or `/delete 0857xxxx #531`. Gone locally and off the Sheet.
 - **Remove a customer**: `/delete 0857xxxx` — number and all its orders, both places.
 - **Today's tally**: `/today` — order count, new vs returning vs banned.

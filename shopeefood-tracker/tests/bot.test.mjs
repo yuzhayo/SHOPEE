@@ -499,49 +499,184 @@ console.log("S20 /delete whole customer removes record + both tombstone kinds");
   check("customer absent from pushed rows", !last.rows.some((r) => r.phone === "6289292929292"));
 }
 
-console.log("S21a /update by order ID patches one cell, propagates on push");
+console.log("S28a /update arms the mode");
+const rootU = sandbox("s28");
 {
-  const root = sandbox("s21");
-  sheetRows = []; pushes.length = 0; sent.length = 0;
-  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
-    "6289393939393": {
+  sheetRows = []; sent.length = 0;
+  const r = await runOnce(rootU, textUpdate("/update"));
+  checkExit(r);
+  check("ARM exact", lastReply() === "✏️ UPDATE MODE\nsend screenshot + number (screenshot alone works too) — I'll fill the empty or wrong cells.\norder number must match a recorded order. (10 minutes, /cancel stops it)", lastReply().replace(/\n/g, " | "));
+  const pend = JSON.parse(readFileSync(join(rootU, "notebook", "pending-updates.json"), "utf8"));
+  check("mode filed for this chat", !!pend["555"]);
+  sent.length = 0;
+  await runOnce(rootU, textUpdate("/start"));
+  check("/start lists update + cancel", lastReply().includes("/update (then send the screenshot)") && lastReply().includes("/cancel"));
+}
+
+console.log("S28b armed number+shot fills blanks, consumes the mode");
+{
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(rootU, "notebook", "customers.json"), JSON.stringify({
+    "6289090909090": {
       first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
-      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" }],
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
       pushedStatus: "not banned", pushedReason: "",
     },
   }));
-  await runOnce(root, textUpdate("/update 3300155108395520491 driver RAHMAT FADLI"));
-  check("T16 exact", lastReply() === "✏️ order #530 3300155108395520491 — UPDATED\ndriver: (blank) → RAHMAT FADLI", lastReply().replace(/\n/g, " | "));
-  check("store patched", store(root)["6289393939393"].events[0].driver === "RAHMAT FADLI");
-  check("push log row carries the correction", pushes.at(-1).log.at(-1).driver === "RAHMAT FADLI");
+  await runOnce(rootU, textUpdate("/update"));
+  sent.length = 0;
+  const r = await runOnce(rootU, shotUpdate("089090909090"));
+  const t = lastReply();
+  checkExit(r);
+  check("UPDATED exact", t === "✏️ order #530 3300155108395520491 — UPDATED\ndriver: (blank) → RAHMAT FADLI\ncustomer: (blank) → Nadya", t.replace(/\n/g, " | "));
+  check("store filled", store(rootU)["6289090909090"].events[0].driver === "RAHMAT FADLI");
+  check("mode consumed", !JSON.parse(readFileSync(join(rootU, "notebook", "pending-updates.json"), "utf8"))["555"]);
+  check("TSV action = update / verdict = updated", tsv(rootU).at(-1).split("\t")[2] === "update" && tsv(rootU).at(-1).split("\t")[3] === "updated");
+  sent.length = 0;
+  await runOnce(rootU, shotUpdate("089090909090"));
+  check("next paste is a normal T3, not an update", lastReply().startsWith("✅ 6289090909090 — CHECKING") && !lastReply().includes("UPDATED"), lastReply().split("\n")[0]);
 }
 
-console.log("S21b /update by number + #number, multi-word name");
+console.log("S28c armed mode corrects wrong values too");
 {
-  const root = sandbox("s21b");
+  const root = sandbox("s28c");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289191919191": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "WRONG DRIVER", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update"));
+  sent.length = 0;
+  await runOnce(root, shotUpdate("089191919191"));
+  check("correction line present", lastReply().includes("driver: WRONG DRIVER → RAHMAT FADLI") && lastReply().includes("customer: (blank) → Nadya"), lastReply().replace(/\n/g, " | "));
+}
+
+console.log("S28d complete order answers already-complete");
+{
+  const root = sandbox("s28d");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289292929292": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "RAHMAT FADLI", customer: "Nadya", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update"));
+  sent.length = 0;
+  await runOnce(root, shotUpdate("089292929292"));
+  check("COMPLETE exact", lastReply() === "✅ order #530 3300155108395520491 — already complete, nothing updated.", lastReply());
+}
+
+console.log("S28e unknown keys refuse but keep the mode");
+{
+  const root = sandbox("s28e");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289393939393": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update"));
+  sent.length = 0;
+  await runOnce(root, shotUpdate("089393939393"), OCR2);
+  check("miss keeps mode on", lastReply().includes("NO DATA") && lastReply().includes("update mode still on"), lastReply().replace(/\n/g, " | "));
+  sent.length = 0;
+  await runOnce(root, shotUpdate("089393939393"));
+  check("right shot then updates", lastReply().includes("— UPDATED"), lastReply().split("\n")[0]);
+}
+
+console.log("S28f targeted /update waits for its order");
+{
+  const root = sandbox("s28f");
   sheetRows = []; sent.length = 0;
   writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
     "6289494949494": {
       first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
-      events: [{ no: "531", id: "3301316233709056913", driver: "BUDI SANTOSO", customer: "", ts: 1791804490000, shot: "b.jpg", chat: 555, verdict: "returning" }],
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
       pushedStatus: "not banned", pushedReason: "",
     },
   }));
-  await runOnce(root, textUpdate("/update 089494949494 #531 customer Siti Rahma"));
-  check("patched with spaces kept", lastReply().includes("customer: (blank) → Siti Rahma"), lastReply().replace(/\n/g, " | "));
-  check("store patched", store(root)["6289494949494"].events[0].customer === "Siti Rahma");
+  await runOnce(root, textUpdate("/update #531"));
+  check("ARM names the target", lastReply().startsWith("✏️ UPDATE MODE for #531"), lastReply().split("\n")[0]);
+  sent.length = 0;
+  await runOnce(root, shotUpdate("089494949494"));
+  check("wrong shot waits", lastReply() === "⚠️ that's #530 — update still waiting for #531.", lastReply());
 }
 
-console.log("S22 refusals: unknown target, bad field");
+console.log("S28g /cancel stops the mode, quiet when nothing armed");
 {
-  const root = sandbox("s22");
+  const root = sandbox("s28g");
   sheetRows = []; sent.length = 0;
-  await runOnce(root, textUpdate("/update 9999999999999999 driver X"));
-  check("unknown order refuses", lastReply().startsWith("🔍 NO DATA"), lastReply());
-  await runOnce(root, textUpdate("/update 3300155108395520491 phone 123"));
-  check("bad field shows usage", lastReply().includes("/update <orderID> driver|customer <name>"), lastReply().replace(/\n/g, " | "));
-  await runOnce(root, textUpdate("/delete gibberish"));
-  check("bad delete shows usage", lastReply().includes("/delete <orderID>"), lastReply().replace(/\n/g, " | "));
+  await runOnce(root, textUpdate("/update"));
+  sent.length = 0;
+  await runOnce(root, textUpdate("/cancel"));
+  check("CANCELLED exact", lastReply() === "✏️ update cancelled — back to normal.", lastReply());
+  sent.length = 0;
+  await runOnce(root, textUpdate("/cancel"));
+  check("nothing armed is plain", lastReply() === "nothing to cancel.", lastReply());
+}
+
+console.log("S28h screenshot alone fills in update mode");
+{
+  const root = sandbox("s28h");
+  sheetRows = []; pushes.length = 0; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update"));
+  sent.length = 0;
+  await runOnce(root, shotUpdate(""));
+  const t = lastReply();
+  check("shot-only UPDATED", t === "✏️ order #530 3300155108395520491 — UPDATED\ndriver: (blank) → RAHMAT FADLI\ncustomer: (blank) → Nadya", t.replace(/\n/g, " | "));
+  check("push carries the fill", pushes.at(-1).log.at(-1).driver === "RAHMAT FADLI");
+}
+
+console.log("S28i expired mode falls back to normal flow");
+{
+  const root = sandbox("s28i");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289696969696": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "RAHMAT FADLI", customer: "Nadya", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update"));
+  writeFileSync(join(root, "notebook", "pending-updates.json"), JSON.stringify({ 555: { since: 0, no: "", id: "" } }));
+  sent.length = 0;
+  await runOnce(root, shotUpdate("089696969696"));
+  check("expired = plain T3", lastReply().startsWith("✅ 6289696969696 — CHECKING") && !lastReply().includes("UPDATED"), lastReply().split("\n")[0]);
+}
+
+console.log("S28j unreadable shot keeps the mode for the real one");
+{
+  const root = sandbox("s28j");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289797979797": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update"));
+  sent.length = 0;
+  await runOnce(root, shotUpdate(""), OCR_MEME);
+  check("meme refused", lastReply() === "NOT SHOPEE — nothing recorded.", lastReply());
+  sent.length = 0;
+  await runOnce(root, shotUpdate(""));
+  check("real shot then updates", lastReply().includes("— UPDATED"), lastReply().split("\n")[0]);
 }
 
 console.log("S23 /today counts this WIB day only");

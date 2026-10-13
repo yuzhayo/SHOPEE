@@ -131,6 +131,36 @@ function saveFlags() {
   writeFileSync(tmp, JSON.stringify(flagged, null, 1));
   renameSync(tmp, FLAG_FILE);
 }
+
+// ---- guided /update (turns 52-56): bare /update arms a 10-minute per-chat mode;
+// the next screenshot becomes fill material — screenshot ALONE works, because the
+// order keys point straight at the owner record (no number needed). Blanks filled
+// AND wrongs corrected (braver than auto-backfill, safe because Jack armed it).
+// One screenshot consumes the mode; /cancel or 10 minutes switch it off.
+const UPDATE_WINDOW = 10 * 60 * 1000;
+const UPD_FILE = `${ROOT}/notebook/pending-updates.json`;
+let pendingUpdates = {};
+try {
+  const p = JSON.parse(readFileSync(UPD_FILE, "utf8"));
+  if (p && typeof p === "object") pendingUpdates = p;
+} catch {
+  // none armed
+}
+function saveUpdates() {
+  const tmp = UPD_FILE + ".tmp";
+  writeFileSync(tmp, JSON.stringify(pendingUpdates));
+  renameSync(tmp, UPD_FILE);
+}
+function armedUpdate(chatId) {
+  const u = pendingUpdates[chatId];
+  if (!u) return null;
+  if (Date.now() - u.since > UPDATE_WINDOW) {
+    delete pendingUpdates[chatId];
+    saveUpdates();
+    return null;
+  }
+  return u;
+}
 const flagKey = (s) => (s || "").trim().toUpperCase();
 function flaggedLine(driver) {
   if (!driver) return "";
@@ -310,7 +340,7 @@ async function ocrOrder(absPath) {
 function histOf(phone) {
   return eventLines(phone);
 }
-function buildReply(phone, rec, { kind, newEvent, owner, ocr, nohint }) {
+function buildReply(phone, rec, { kind, newEvent, owner, ocr, nohint, updatestill }) {
   const hist = histOf(rec ? phone : owner || phone);
   const histBlock = hist.length ? `\nhistory:\n${hist.join("\n")}` : "";
   switch (kind) {
@@ -358,10 +388,11 @@ function buildReply(phone, rec, { kind, newEvent, owner, ocr, nohint }) {
       return `⚠️ REJECTED — unable to read order number.\nresend a clear screenshot (NUMBER + SCREENSHOT for a new record).`;
     case "notshopee": // T9
       return `NOT SHOPEE — nothing recorded.`;
-    case "nodata": { // T10 — keys not in database (shot-only miss, cell-11 miss)
+    case "nodata": { // T10 — keys not in database (shot-only miss, cell-11 miss, update miss)
       const keys = ocr && (ocr.no || ocr.id) ? `order ${evStr(ocr)} ` : "";
       return `⚠️ NO DATA — ${keys}not in database.` +
-        (nohint ? "" : "\nto make a new record send NUMBER + SCREENSHOT.");
+        (updatestill ? "\nupdate mode still on — send the recorded order's screenshot."
+         : nohint ? "" : "\nto make a new record send NUMBER + SCREENSHOT.");
     }
     case "banned-order": { // T11 — banned, new order still logged (+ history + repeat count)
       const ev = newEvent ? `\norder logged\norder: #${newEvent.no}\norder ID: ${newEvent.id}` +
@@ -609,7 +640,6 @@ async function handleWho(chatId, text) {
 // /delete removes locally AND queues Sheet row tombstones (needs script v3.3;
 // without it the local delete still stands, the Sheet row lingers).
 const DEL_USAGE = "usage:\n/delete <orderID>\n/delete <number> #<order number>\n/delete <number>";
-const UPD_USAGE = "usage:\n/update <orderID> driver|customer <name>\n/update <number> #<order number> driver|customer <name>";
 
 function findEventById(id) {
   for (const [phone, rec] of customers)
@@ -669,41 +699,6 @@ async function handleDelete(chatId, text) {
   const victims = rec.events.filter((e) => e.no === nom[1]);
   if (!victims.length) { await send(chatId, `🔍 NO DATA — order #${nom[1]} not under ${phone}.`); return; }
   return dropEvents(chatId, phone, rec, victims);
-}
-
-async function handleUpdateCmd(chatId, text) {
-  const rest = argAfter("update", text).trim();
-  const m = rest.match(/^(.*?)\b(driver|customer)\b\s+(.+)$/i);
-  if (!m) { await send(chatId, UPD_USAGE); return; }
-  const field = m[2].toLowerCase();
-  const value = m[3].trim().slice(0, 40);
-  if (!value) { await send(chatId, UPD_USAGE); return; }
-  const head = m[1].trim();
-  let targets = [];
-  const idm = head.match(/^(\d{14,20})$/);
-  if (idm) {
-    const hit = findEventById(idm[1]);
-    if (hit) targets = [hit];
-  } else {
-    const phone = normalizePhone(head);
-    const nom = head.match(/#(\d{1,7})\b/);
-    if (phone && nom) {
-      const rec = customers.get(phone);
-      if (rec) targets = rec.events.filter((e) => e.no === nom[1]).map((ev) => ({ phone, rec, ev }));
-    }
-  }
-  if (!targets.length) { await send(chatId, `🔍 NO DATA — nothing matching "${head}" to update.`); return; }
-  const lines = [];
-  for (const t of targets) {
-    const old = t.ev[field] || "(blank)";
-    if (old !== value) { t.ev[field] = value; lines.push(`${field}: ${old} → ${value}`); }
-    else lines.push(`${field}: unchanged (${value})`);
-  }
-  saveStore();
-  const first = targets[0].ev;
-  log(`update #${first.no} ${first.id}: ${lines.join("; ")} (chat ${chatId})`);
-  await send(chatId, `✏️ order #${first.no} ${first.id} — UPDATED\n${lines.join("\n")}`);
-  await sheetPush();
 }
 
 async function handleToday(chatId) {
@@ -791,7 +786,7 @@ async function handleUpdate(u) {
       chatId,
       "ShopeeFood tracker.\n" +
         "number = check · number + screenshot = record order · screenshot alone = lookup\n\n" +
-        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status\n/today\n/find <name>\n/delete <orderID>\n/update <orderID> driver|customer <name>\n/flag driver <#no or name>"
+        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status\n/today\n/find <name>\n/delete <orderID>\n/update (then send the screenshot)\n/cancel\n/flag driver <#no or name>"
     );
     return;
   }
@@ -807,7 +802,30 @@ async function handleUpdate(u) {
   if (/^\/unban\b/.test(text)) return handleUnban(chatId, text);
   if (/^\/who\b/.test(text)) return handleWho(chatId, text);
   if (/^\/delete\b/.test(text)) return handleDelete(chatId, text);
-  if (/^\/update\b/.test(text)) return handleUpdateCmd(chatId, text);
+  if (/^\/update\b/.test(text)) {
+    // arm guided update mode: optional #number or orderID narrows the target
+    const rest = argAfter("update", text);
+    const noM = rest.match(/#(\d{1,7})\b/);
+    const idM = rest.match(/(\d{14,20})/);
+    pendingUpdates[chatId] = { since: Date.now(), no: noM ? noM[1] : "", id: idM ? idM[1] : "" };
+    saveUpdates();
+    const tgt = noM ? `#${noM[1]}` : idM ? idM[1] : "";
+    log(`update mode armed chat ${chatId}${tgt ? ` for ${tgt}` : ""}`);
+    await send(chatId,
+      `✏️ UPDATE MODE${tgt ? ` for ${tgt}` : ""}\nsend screenshot + number (screenshot alone works too) — I'll fill the empty or wrong cells.\norder number must match a recorded order. (10 minutes, /cancel stops it)`);
+    return;
+  }
+  if (/^\/cancel\b/.test(text)) {
+    if (armedUpdate(chatId)) {
+      delete pendingUpdates[chatId];
+      saveUpdates();
+      log(`update mode cancelled chat ${chatId}`);
+      await send(chatId, "✏️ update cancelled — back to normal.");
+    } else {
+      await send(chatId, "nothing to cancel.");
+    }
+    return;
+  }
   if (/^\/today\b/.test(text)) return handleToday(chatId);
   if (/^\/find\b/.test(text)) return handleFind(chatId, text);
   if (/^\/flag\b/.test(text)) return handleFlag(chatId, text);
@@ -841,6 +859,31 @@ async function handleUpdate(u) {
     await sheetPush();
   };
 
+  // guided-update fill: blanks AND wrongs corrected from the armed screenshot.
+  // Consumes the mode (one screenshot per arming); caller verified it is armed.
+  const updateApply = async (rec, ocr) => {
+    const ev = ocr.id ? rec.events.find((e) => e.id === ocr.id) : rec.events.find((e) => e.no === ocr.no);
+    const lines = [];
+    for (const f of ["driver", "customer"]) {
+      const old = ev[f] || "(blank)";
+      if (ocr[f] && old !== ocr[f]) { ev[f] = ocr[f]; lines.push(`${f}: ${old} → ${ocr[f]}`); }
+    }
+    delete pendingUpdates[chatId];
+    saveUpdates();
+    if (!lines.length) {
+      return done("update", "checking", `✅ order #${ev.no} ${ev.id} — already complete, nothing updated.`, rec);
+    }
+    saveStore();
+    log(`update #${ev.no} ${ev.id}: ${lines.join("; ")} (chat ${chatId})`);
+    return done("update", "updated", `✏️ order #${ev.no} ${ev.id} — UPDATED\n${lines.join("\n")}`, rec);
+  };
+  const updateMiss = async () =>
+    done("nodata", "nodata", buildReply(phone, null, { kind: "nodata", ocr, updatestill: true }));
+  const updateWant = (mode, ocr) => {
+    const want = mode.no ? `#${mode.no}` : mode.id;
+    return done("update-wait", "checking", `⚠️ that's #${ocr.no} — update still waiting for ${want}.`);
+  };
+
   // ---------- no number in the message ----------
   if (!phone) {
     if (!photo) {
@@ -850,8 +893,15 @@ async function handleUpdate(u) {
       return;
     }
     if (keys) {
-      // shot-only lookup: hit -> CHECKING + owner's history, miss -> NO DATA + hint
+      // shot-only lookup: hit -> CHECKING + owner's history, miss -> NO DATA + hint.
+      // Update mode armed: the shot alone is fill material (keys point at the owner).
       const owner = findOrderOwner(ocr);
+      const mode0 = armedUpdate(chatId);
+      if (mode0) {
+        if ((mode0.no && ocr.no !== mode0.no) || (mode0.id && ocr.id !== mode0.id)) return updateWant(mode0, ocr);
+        if (!owner) return updateMiss();
+        return updateApply(customers.get(owner), ocr);
+      }
       if (owner) {
         const orec = customers.get(owner);
         const kind = orec.banned ? "banned-check" : "check";
@@ -880,6 +930,17 @@ async function handleUpdate(u) {
 
   // ---------- number + Shopee shot, keys unreadable: REJECTED ----------
   if (!keys) return done("rejected", "rejected", buildReply(phone, rec, { kind: "rejected" }));
+
+  // ---------- update mode armed: this screenshot is fill material, never a new order ----------
+  const mode1 = photo ? armedUpdate(chatId) : null;
+  if (mode1 && keys) {
+    if ((mode1.no && ocr.no !== mode1.no) || (mode1.id && ocr.id !== mode1.id)) return updateWant(mode1, ocr);
+    const owner = findOrderOwner(ocr);
+    if (!owner) return updateMiss();
+    if (owner !== phone)
+      return done("order-wrong-number", "checking", buildReply(phone, null, { kind: "wrong-owner", owner, ocr }));
+    return updateApply(rec, ocr);
+  }
 
   // ---------- number + valid Shopee keys ----------
   const dup = rec ? findOrder(rec, ocr) : false;
