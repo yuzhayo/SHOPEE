@@ -22,6 +22,10 @@ Secrets (files only, never typed into chat): `VPS-KEY.txt` (VM API key),
 `WEBHOOK-SECRET.txt` (Telegram↔Netlify shared secret), `NETLIFY_PERSONAL_ACCESS_TOKEN.txt`,
 `GITHUB-PAT.txt`.
 
+Iron rule learned Oct 13: `SHEET-TOKEN.txt` must equal the `TOKEN = "..."` line inside
+`SHEET-SCRIPT.js`. They diverged once and every Sheet sync answered "denied" until
+they matched again. After any script edit, check the line before pasting.
+
 ---
 
 ## 2. Daily use (Jack)
@@ -142,6 +146,8 @@ even an edit made on github.com from your phone ships by itself.
 
 **Sheet script v3.3 (one repaste, replaces v3.2):** honors the bot's row tombstones
 (`/delete`) and reports the cleaned count back. Same one-tap paste as before.
+Tombstone hygiene: matched rows clear on confirmation; rows already gone retire
+by themselves after 3 pushes (loud log line each) — the queue can never jam again.
 
 ---
 

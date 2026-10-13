@@ -1292,3 +1292,6 @@ nothing 3 pushes running → retire + loud log; old script (no confirm channel) 
 wait forever, never expire. Tombstones carry attempts (stripped before send,
 normalized on load — no store migration). Proved his delete worked via bridge
 (44 customers, test row gone) before building.
+
+**Turn 86 outcome — v45 live (45,505 B), stuck queue cleared on production**
+(pending-deletes.json now [], both tombstones retired with loud logs after 3 pushes).
