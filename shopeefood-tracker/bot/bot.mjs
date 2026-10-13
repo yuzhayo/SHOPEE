@@ -200,53 +200,109 @@ async function savePhoto(fileId, phone) {
   }
 }
 
-// ---- OCR: order # + Order ID from a saved screenshot (tesseract, offline, free) ----
+// ---- OCR: order # + Order ID + driver + customer from a saved screenshot ----
 async function ocrOrder(absPath) {
   // test seam: the local dev box has no tesseract, so the harness injects the
   // read the bot would have made. Never set on the VM (see RUNBOOK).
   if (process.env.TRACKER_FAKE_OCR) {
-    try { return JSON.parse(process.env.TRACKER_FAKE_OCR); } catch { return { no: "", id: "" }; }
+    try {
+      const o = JSON.parse(process.env.TRACKER_FAKE_OCR);
+      return {
+        no: o.no || "", id: o.id || "", driver: o.driver || "",
+        customer: o.customer || "", shopee: o.shopee !== false,
+      };
+    } catch { return { no: "", id: "", driver: "", customer: "", shopee: true }; }
   }
+  const blank = { no: "", id: "", driver: "", customer: "", shopee: false };
+  let stdout = "";
   try {
-    const { stdout } = await pExecFile("tesseract", [absPath, "stdout", "--psm", "6"], { timeout: 20000 });
-    const no = (stdout.match(/#(\d{1,7})\b/) || [])[1] || "";
-    const id =
-      (stdout.match(/Order[\s\S]{0,12}?(\d{14,20})/) || stdout.match(/(\d{14,20})/) || [])[1] || "";
-    return { no, id };
+    ({ stdout } = await pExecFile("tesseract", [absPath, "stdout", "--psm", "6"], { timeout: 20000 }));
   } catch (e) {
     log(`ocr failed: ${e.message}`);
-    return { no: "", id: "" };
+    return blank;
   }
+  const no = (stdout.match(/#(\d{1,7})\b/) || [])[1] || "";
+  const id =
+    (stdout.match(/Order[\s\S]{0,12}?(\d{14,20})/) || stdout.match(/(\d{14,20})/) || [])[1] || "";
+  // names sit after their labels ("Driver - RAHMAT FADLI", "Pelanggan - Nadya").
+  // Validity never depends on them, so a missed name only blanks a line, never rejects.
+  const nameAfter = (label) => {
+    const m = stdout.match(new RegExp(`${label}\\s*[-\u2013\u2014:\u00b7.]\\s*([A-Za-z][A-Za-z .']{1,29})`, "i"));
+    if (!m) return "";
+    return m[1]
+      .replace(/\s+(Pelanggan|Driver|Order|Total|Rincian|Informasi|Waktu|Tanggal).*$/i, "")
+      .replace(/[^A-Za-z]+$/, "").trim();
+  };
+  const shopee = /(shopee|rincian\s*pesanan|order\s*id|pengiriman|pesanan\s*siap)/i.test(stdout);
+  return { no, id, driver: nameAfter("Driver"), customer: nameAfter("Pelanggan"), shopee };
 }
 
-// ---- replies (approved templates) ----
-function buildReply(phone, rec, { action, dup, wasKnown, newEvent, shot }) {
-  if (!rec) return `🆕 ${phone} — not in database yet`;
-
-  if (rec.banned) {
-    let t =
-      `⛔ ${phone} — banned ${fmtShort(rec.banDate)}\n` +
-      `reason: ${rec.banReason || "no reason given"}\n` +
-      `cancel this order yourself.`;
-    if (action === "order" && newEvent) t += `\norder logged: ${evStr(newEvent)}`;
-    return t;
+// ---- replies: Jack's templates T1-T13 (turn 47). Banned always carries history
+// (a banned order is still logged, so there is always something to show) ----
+function histOf(phone) {
+  return eventLines(phone);
+}
+function buildReply(phone, rec, { kind, newEvent, owner, ocr, nohint }) {
+  const hist = histOf(rec ? phone : owner || phone);
+  const histBlock = hist.length ? `\nhistory:\n${hist.join("\n")}` : "";
+  switch (kind) {
+    case "new": // T1 — first order from a new customer (no history: this IS the first)
+      return (
+        `🆕 ${phone} — NEW CUSTOMER\norder logged\n` +
+        `order number: #${newEvent.no}\norder ID: ${newEvent.id}` +
+        (newEvent.driver ? `\ndriver: ${newEvent.driver}` : "") +
+        (newEvent.customer ? `\ncustomer: ${newEvent.customer}` : "")
+      );
+    case "returning": // T2
+      return (
+        `✅ ${phone} — RETURNING\norder logged\n` +
+        `order: #${newEvent.no}\norder ID: ${newEvent.id}` +
+        (newEvent.driver ? `\ndriver: ${newEvent.driver}` : "") +
+        (newEvent.customer ? `\ncustomer: ${newEvent.customer}` : "") +
+        histBlock
+      );
+    case "dup": // T3 — keys match this customer's own record
+      return `✅ ${phone} — CHECKING\norder already recorded\norder: #${ocr.no}\norder ID: ${ocr.id}${histBlock}`;
+    case "wrong-owner": // T4 — keys belong to another number
+      return (
+        `⚠️ ${phone} — CHECKING\n` +
+        `order #${ocr.no} ${ocr.id} already recorded under ${owner}\n` +
+        `wrong number? nothing was recorded for ${phone}.`
+      );
+    case "check": { // T5 — plain history lookup (number-only, cell-11 hit, shot-only hit)
+      const who = rec ? phone : owner || phone; // shot-only lookup speaks as the owner
+      const ohist = histOf(who);
+      const oblock = ohist.length ? `\nhistory:\n${ohist.join("\n")}` : "";
+      if (!rec || !rec.events.length) {
+        if (!rec) return `✅ ${who} — CHECKING${oblock}`;
+        return `🆕 ${phone} — CHECKING\nno orders yet.`;
+      }
+      return `✅ ${phone} — CHECKING${oblock}`;
+    }
+    case "norecord": // T6
+      return `🔍 ${phone} — NO RECORD\nnot in database.`;
+    case "rejected": // T7 — Shopee shot, keys unreadable
+      return `⚠️ ${phone} — REJECTED\ncriteria not met in screenshot. resend a clear screenshot + number.`;
+    case "rejected-nokey": // T8 — shot alone, Shopee-looking, no keys
+      return `⚠️ REJECTED — unable to read order number.\nresend a clear screenshot (NUMBER + SCREENSHOT for a new record).`;
+    case "notshopee": // T9
+      return `NOT SHOPEE — nothing recorded.`;
+    case "nodata": { // T10 — keys not in database (shot-only miss, cell-11 miss)
+      const keys = ocr && (ocr.no || ocr.id) ? `order ${evStr(ocr)} ` : "";
+      return `⚠️ NO DATA — ${keys}not in database.` +
+        (nohint ? "" : "\nto make a new record send NUMBER + SCREENSHOT.");
+    }
+    case "banned-order": { // T11 — banned, new order still logged
+      const ev = newEvent ? `\norder logged\norder: #${newEvent.no}\norder ID: ${newEvent.id}` +
+        (newEvent.driver ? `\ndriver: ${newEvent.driver}` : "") +
+        (newEvent.customer ? `\ncustomer: ${newEvent.customer}` : "") : "";
+      return `⛔ ${phone} — BANNED\nreason: ${rec.banReason || "no reason given"}\ncancel this order yourself.${ev}${histBlock}`;
+    }
+    case "banned-check": // T12 — banned, lookup only
+      return `⛔ ${phone} — BANNED\nreason: ${rec.banReason || "no reason given"}\ncancel this order yourself.${histBlock}`;
+    default:
+      return `🔍 ${phone} — NO RECORD\nnot in database.`;
   }
-
-  const n = rec.events.length;
-  const emoji = wasKnown ? "✅" : "🆕";
-  const state = wasKnown ? "returning" : "new customer";
-  const suffix =
-    action === "order" ? " · order logged" : dup ? " · order already recorded" : "";
-  const facts =
-    n <= 1
-      ? `orders: ${n} · first & last: ${fmtShort(rec.first)}`
-      : `orders: ${n} · last: ${fmtShort(rec.last)} · first: ${fmtShort(rec.first)}`;
-
-  let t = `${emoji} ${phone} — ${state}${suffix}\n${facts}`;
-  const hist = eventLines(phone);
-  if (hist.length) t += `\nhistory:\n${hist.join("\n")}`;
-  if (action === "order" && shot) t += `\n📸 saved: ${shot}`;
-  return t;
 }
 
 function record(fields) {
@@ -359,6 +415,8 @@ async function sheetPush() {
           verdict: e.verdict || "-",
           no: e.no || "",
           id: e.id || "",
+          driver: e.driver || "",
+          customer: e.customer || "",
           shot: e.shot || "",
           chat: e.chat ?? "",
         });
@@ -406,9 +464,11 @@ async function handleBan(chatId, text) {
   customers.set(phone, rec);
   saveStore();
   log(`ban ${phone} (chat ${chatId}): ${reason}`);
+  const hist = eventLines(phone);
   await send(
     chatId,
-    `⛔ ${phone} — banned ${fmtShort(rec.banDate)}\nreason: ${reason}\ncancel this order yourself.\norders: ${rec.events.length}`
+    `⛔ ${phone} — BANNED\nreason: ${reason}\ncancel this order yourself.` +
+      (hist.length ? `\nhistory:\n${hist.join("\n")}` : "")
   );
   await sheetPush();
 }
@@ -471,7 +531,7 @@ async function handleUpdate(u) {
     await send(
       chatId,
       "ShopeeFood tracker.\n" +
-        "bare number = check · screenshot + number = order (recorded once)\n\n" +
+        "number = check · number + screenshot = record order · screenshot alone = lookup\n\n" +
         "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status"
     );
     return;
@@ -492,94 +552,100 @@ async function handleUpdate(u) {
   const nowIso = new Date().toISOString();
   const now = Date.now();
 
-  // no number anywhere -> record it, stay silent
-  const phone = text ? normalizePhone(text) : null;
-  if (!phone) {
-    let shot = "";
-    if (photo) shot = await savePhoto(photo[photo.length - 1].file_id, null);
-    record([nowIso, "", photo ? "SCREENSHOT-ONLY" : "TEXT-NO-NUMBER", "-", 0, "", "", shot, chatId]);
-    log(`recorded ${photo ? "screenshot-only" : "text-no-number"} chat ${chatId} (${shot || "no file"})`);
-    return;
-  }
-
   // Jack's Sheet edits win on the very next paste — read BEFORE deciding
   await sheetPull();
 
+  const phone = text ? normalizePhone(text) : null;
+
+  // every photo is saved: what Jack sent is evidence, even rejects
   let shot = "";
-  let ocr = null;
+  let ocr = { no: "", id: "", driver: "", customer: "", shopee: false };
   if (photo) {
     shot = await savePhoto(photo[photo.length - 1].file_id, phone);
     if (shot) ocr = await ocrOrder(`${ROOT}/notebook/screenshots/${shot}`);
   }
+  // validity = order ID + order number readable (+ phone, handled by branch).
+  // Driver / customer names never block: a missed name blanks a line, never rejects.
+  const keys = !!(ocr.id && ocr.no);
 
-  let rec = customers.get(phone);
-  const wasKnown = !!rec && rec.events.length > 0;
-  let action = "check";
-  let dupMatched = false;
-  let newEvent = null;
+  const done = async (action, verdict, reply, rec) => {
+    record([nowIso, phone || "", action, verdict,
+      rec ? rec.events.length : 0, ocr.no || "", ocr.id || "", shot, chatId]);
+    log(`reply ${action}/${verdict} ${phone || "(no number)"} -> chat ${chatId}`);
+    await send(chatId, reply);
+    await sheetPush();
+  };
 
-  if (photo) {
-    const dup = rec ? findOrder(rec, ocr) : false;
-    const owner = dup ? phone : findOrderOwner(ocr); // P5: same order under another number?
-    if (owner && owner !== phone) {
-      // mis-paste: the order is already booked under the right number -> book nothing
-      record([nowIso, phone, "order-wrong-number", "-", 0, ocr?.no ?? "", ocr?.id ?? "", shot, chatId]);
-      log(`wrong-number order ${phone} #${ocr?.no || "?"} ${ocr?.id || "(no id)"} -> belongs to ${owner}`);
-      await send(
-        chatId,
-        `⚠️ ${phone} — order ${evStr(ocr)} already recorded under ${owner}\nwrong number? nothing was recorded for ${phone}.`
-      );
-      await sheetPush();
+  // ---------- no number in the message ----------
+  if (!phone) {
+    if (!photo) {
+      // random chatter: note it, stay silent (matrix cell 4, unruled — kept as today)
+      record([nowIso, "", "TEXT-NO-NUMBER", "-", 0, "", "", "", chatId]);
+      log(`recorded text-no-number chat ${chatId}`);
       return;
     }
-    if (dup) {
-      dupMatched = true;
-      log(`dup order ${phone} #${ocr?.no || "?"} ${ocr?.id || "(no id)"} -> check`);
-    } else {
-      action = "order";
-      if (!rec) {
-        rec = {
-          first: now,
-          last: now,
-          banned: false,
-          banReason: "",
-          banDate: 0,
-          events: [],
-          pushedStatus: "not banned",
-          pushedReason: "",
-        };
-        customers.set(phone, rec);
+    if (keys) {
+      // shot-only lookup: hit -> CHECKING + owner's history, miss -> NO DATA + hint
+      const owner = findOrderOwner(ocr);
+      if (owner) {
+        const orec = customers.get(owner);
+        const kind = orec.banned ? "banned-check" : "check";
+        return done("check-lookup", orec.banned ? "banned" : "checking",
+          buildReply("", orec.banned ? orec : null, { kind, owner, ocr }), orec);
       }
-      const verdictNow = rec.banned ? "banned" : wasKnown ? "returning" : "new";
-      newEvent = { no: ocr?.no || "", id: ocr?.id || "", ts: now, shot, chat: chatId, verdict: verdictNow };
-      rec.events.push(newEvent);
-      rec.last = now;
-      saveStore();
-      log(`order recorded ${phone} #${newEvent.no || "?"} ${newEvent.id || "(no id)"} -> ${verdictNow}`);
+      return done("nodata", "nodata", buildReply("", null, { kind: "nodata", ocr }));
     }
+    if (ocr.shopee) return done("rejected-nokey", "rejected", buildReply("", null, { kind: "rejected-nokey" }));
+    return done("not-shopee", "not-shopee", buildReply("", null, { kind: "notshopee" }));
   }
 
-  const reply = buildReply(phone, rec, { action, dup: dupMatched, wasKnown, newEvent, shot });
-  const audit = dupMatched ? "check-dup" : action;
-  // P13: the TSV logs the verdict AT THE MOMENT (the Sheet log row does too);
-  // reading the state after the write would say "returning" for a first order.
-  const tsvVerdict = newEvent?.verdict ?? stateOf(rec);
-  record([
-    nowIso,
-    phone,
-    audit,
-    tsvVerdict,
-    rec ? rec.events.length : 0,
-    ocr?.no ?? "",
-    ocr?.id ?? "",
-    shot,
-    chatId,
-  ]);
-  log(`reply ${audit}/${tsvVerdict} ${phone} -> chat ${chatId}`);
-  await send(chatId, reply);
+  // ---------- number, no photo: pure lookup ----------
+  let rec = customers.get(phone);
+  if (!photo) {
+    if (!rec) return done("check-norecord", "norecord", buildReply(phone, null, { kind: "norecord" }));
+    if (rec.banned) return done("check", "banned", buildReply(phone, rec, { kind: "banned-check" }), rec);
+    return done("check", "checking", buildReply(phone, rec, { kind: "check" }), rec);
+  }
 
-  // push EVERY cycle: checks included, so the orders log backfills and edits stay fresh
-  await sheetPush();
+  // ---------- number + photo, but not a Shopee order: ignore the picture (cell 11) ----------
+  if (!ocr.shopee && !keys)
+    if (!rec) return done("nodata", "nodata", buildReply(phone, null, { kind: "nodata", ocr: { no: "", id: "" }, nohint: true }));
+    else if (rec.banned) return done("check", "banned", buildReply(phone, rec, { kind: "banned-check" }), rec);
+    else return done("check", "checking", buildReply(phone, rec, { kind: "check" }), rec);
+
+  // ---------- number + Shopee shot, keys unreadable: REJECTED ----------
+  if (!keys) return done("rejected", "rejected", buildReply(phone, rec, { kind: "rejected" }));
+
+  // ---------- number + valid Shopee keys ----------
+  const dup = rec ? findOrder(rec, ocr) : false;
+  const owner = dup ? phone : findOrderOwner(ocr); // P5: same order under another number?
+  if (owner && owner !== phone)
+    // mis-paste: the order is already booked under the right number -> book nothing
+    return done("order-wrong-number", "checking", buildReply(phone, null, { kind: "wrong-owner", owner, ocr }));
+  if (dup)
+    if (rec.banned) return done("check-dup", "banned", buildReply(phone, rec, { kind: "banned-check" }), rec);
+    else return done("check-dup", "checking", buildReply(phone, rec, { kind: "dup", ocr }), rec);
+
+  // brand-new order keys: NEW (unknown number) or RETURNING (known), banned still logged
+  const wasKnown = !!rec && rec.events.length > 0;
+  if (!rec) {
+    rec = {
+      first: now, last: now, banned: false, banReason: "", banDate: 0,
+      events: [], pushedStatus: "not banned", pushedReason: "",
+    };
+    customers.set(phone, rec);
+  }
+  const verdictNow = rec.banned ? "banned" : wasKnown ? "returning" : "new";
+  const newEvent = {
+    no: ocr.no, id: ocr.id, driver: ocr.driver, customer: ocr.customer,
+    ts: now, shot, chat: chatId, verdict: verdictNow,
+  };
+  rec.events.push(newEvent);
+  rec.last = now;
+  saveStore();
+  log(`order recorded ${phone} #${newEvent.no} ${newEvent.id} -> ${verdictNow}`);
+  const kind = rec.banned ? "banned-order" : wasKnown ? "returning" : "new";
+  return done("order", verdictNow, buildReply(phone, rec, { kind, newEvent }), rec);
 }
 
 // ---- main loop (dev mode: long polling; production switch = Phase 6) ----

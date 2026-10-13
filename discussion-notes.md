@@ -852,3 +852,133 @@ Telegram `getWebhookInfo` → url = `.../ear`, `allowed_updates: message,channel
 Polling quota bleed **stopped**. Rollback = `node netlify-ear.mjs rollback` (proven earlier).
 
 **Status: step 3 of 3 = one real paste from Jack** to confirm reply + Sheet row.
+
+---
+
+**Turn 41 - Jack's design dictation (IN PROGRESS - he said "this is not final").**
+
+His words, verbatim: *"i want data that extracted from screenshoot is -order ID
+-order number -driver name -pelanggan name/ this is not final"*
+
+Mapping to current code (evidence):
+- order ID = 19-digit id -> already extracted (`bot.mjs:214`), Sheet `orders` column `order id`
+- order number = `#531` -> already extracted (`bot.mjs:212`), Sheet `orders` column `order number`
+- driver name (e.g. "RAHMAT FADLI") -> NOT extracted yet; OCR at `bot.mjs:203-214` only
+  matches numbers (`#(\d{1,7})` + `(\d{14,20})`); Sheet LOG_HEAD has no driver column
+  (`SHEET-SCRIPT.js:24`: time, phone, verdict, order number, order id, screenshot, chat)
+- pelanggan name (e.g. "Nadya") -> NOT extracted yet; same gap + no Sheet column
+
+Status: waiting for the rest of his design list before building (he is still dictating).
+Also pending from same conversation: reply-format direction (A/B/C/dictate) - unanswered yet.
+
+---
+
+**Turn 42 — Jack ruled on all 9 scenarios (design still his to declare final).**
+
+His rulings, verbatim in spirit:
+1. Number only + NO record → **CHECKING – NO RECORD**.
+2. Screenshot + number NOT valid → **REJECTED** (criteria not met in screenshot, nothing recorded).
+3. Screenshot with NO number → first check Shopee-or-not: not Shopee → reply **NOT SHOPEE**,
+   nothing stored. Has order id/number → look up database: hit → **CHECKING** + history;
+   miss → **NO DATA** + "new record needs NUMBER AND SCREENSHOT".
+4. Banned number sends valid new order → **STILL LOGGED** (reply stays banned).
+5. Order belongs to a different number → Jack: "should already be clear with rules above??"
+   → yes: any orderID-or-number match = CHECKING, no new record; reply shows the history
+   of the record that owns the order (today's "already recorded under A" warning is that).
+6. Half-match conflict → impossible in practice: **order ID is Shopee-generated, never
+   duplicates** → ID match decides, always.
+7. "Valid" = **order ID + order number readable from the screenshot + phone number present**.
+   Driver & pelanggan names still extracted/stored when readable, never block validity.
+8. Commands/chatter (/ban /unban /who /status /start) → no ruling yet; keeping today's
+   behavior unless he says otherwise.
+9. Double-send guard (same screenshot twice → single record) → no ruling yet; keeping
+   today's no-double-record unless he says otherwise.
+
+Full rule set now: NEW (valid shot+number, unknown number) / RETURNING (valid, known number,
+both order keys new) / CHECKING-dup (either key matches) / CHECKING number-only known
+(history+status) / CHECKING number-only unknown (NO RECORD) / REJECTED (unreadable shot) /
+NO-number-shot flow (NOT SHOPEE | CHECKING | NO DATA) / banned-still-logged.
+Reply WORDING still open (A/B/C/his own — asked turn 40, unanswered).
+
+---
+
+**Turn 43 — Full paste matrix (Jack asked: every possible thing he could paste to the group).**
+
+Derived from his turn-42 rulings. 16 cells: number-only x4 (known / banned / unknown /
+random-text-no-number), number+shot x7 (NEW / RETURNING / CHECKING-same-owner /
+CHECKING-other-owner / banned-still-logged / REJECTED-unreadable / non-Shopee+number-UNRULED),
+shot-only x4 (NOT SHOPEE / CHECKING-hit / NO DATA-miss / unreadable-no-number-UNRULED),
+commands x1 (keep as today). Two cells unruled: (a) number + non-Shopee screenshot,
+(b) shot-only Shopee-looking but keys unreadable. Check order: number → read shot →
+validity gate → key match → ban → new/returning.
+
+---
+
+**Turn 44 — Matrix complete, 16/16. Jack ruled the last two cells:**
+- Cell 11 (number + non-Shopee screenshot): shot ignored, degrades to number check →
+  number matches a record → CHECKING + history; no match → NO DATA.
+- Cell 15 (shot-only, Shopee-looking, keys unreadable): REJECTED, reason
+  "unable to read order number", nothing recorded.
+Note his wording split: unknown NUMBER alone → "NO RECORD" (#3); number+non-Shopee-shot
+with no match → "NO DATA" (#11). Kept distinct as dictated. Still open: reply WORDING
+(A/B/C/his own) + commands/double-send (kept as today). Build starts when he declares final.
+
+---
+
+**Turn 45 — Reply templates proposed (Jack: "i need template for each reply").**
+Drafted 13 templates covering all 16 matrix cells, using his real #531 example
+(RAHMAT FADLI / Nadya). Includes driver + pelanggan lines on order replies per his
+extraction list. Language: English (current style); Indonesian offered as an option.
+Status: awaiting his approve/edit — no code touched.
+
+---
+
+**Turn 46 — Jack rebuilt T1–T3 himself (verbatim, locked). Rest (T4–T13) he decides later.**
+
+T1 NEW: "🆕 <phone> — NEW CUSTOMER" / "order logged" / "order number: #.." /
+"order ID: .." / "driver: .." / "customer: .." (no history — first order).
+T2 RETURNING: "✅ <phone> — RETURNING" / "order logged" / "order: #.." /
+"order ID: .." / "driver: .." / "customer: .." / "history:" + full key list.
+T3 CHECKING-dup: "✅ <phone> — CHECKING" / "order already recorded" / "order: #.." /
+"order ID: .." / "history:" + full list.
+NOTE for build time: T1 labels the number line "order number:" while T2/T3 use "order:" —
+kept as dictated, confirm before coding. No code touched; T4–T13 pending.
+
+---
+
+**Turn 47 — Jack corrected me: templates were MINE, he only refined lines + uppercase.**
+Ordered: rebuild ALL templates matching his T1–T3 example style (caps status headline,
+action on its own lowercase line, labeled field lines, history list, no counts/dates lines).
+Rebuilt T1–T13 and presented for approval. Label note: T1 says "order number:" while
+T2/T3 say "order:" — new templates use "order:" (majority), flagged for his veto.
+No code touched.
+
+---
+
+**Turn 48 — BUILD: matrix + T1-T13 + banned-history live-coded, harness 63/63, no-PC deploy.**
+
+Jack: per-order dates later (recorded: history lines gain dates when he says so);
+table refined + "make it work as intended without depend on local pc";
+banned MUST include history (T11/T12 rewritten, /ban confirmation too).
+
+Built in `bot.mjs`: OCR returns {no,id,driver,customer,shopee} (names after Driver/
+Pelanggan labels, guarded so a glued label never leaks in; names never gate validity);
+validity = orderID + order number + phone; full 16-cell decision tree (NO RECORD,
+REJECTED x2, NOT SHOPEE, NO DATA plain/hinted, cell-11 degrade, wrong-owner CHECKING,
+ID-match-decides); T1 uses "order number:", T2/T3/T11 "order:" (his verbatim split kept);
+📸-saved line dropped (his templates have none; files still saved internally as evidence);
+banned orders still logged with verdict, history on every banned reply.
+
+Sheet v3.2 (`SHEET-SCRIPT.js`): orders tab +driver +customer name; header self-heal +
+old-row shift (7->9 cols) so existing screenshots/chats stay aligned; self-heal compare
+covers the new fields. Needs his ONE browser tap (paste + New version + Deploy).
+
+No-PC deploy: new workflow `deploy-bot.yml` (VM curls raw bot.mjs from repo,
+node --check gates the swap, restarts poller only if active) + repo secret
+FREESTYLE_API_KEY + var VM_ID. After this turn: ear updates AND bot updates both ship
+from a push — even a github.com phone edit. Bootstrap: this deploy goes through the
+workflow itself (no local file transfer at all).
+
+Harness `tests/bot.test.mjs` rewritten: 63/63 green (T1/T2/T3/T4/T6/T7/T8/T9/T10/T11/T12
+exact strings, driver/customer in store + sheet push, all branches, all old rails kept).
+Per-order dates: NOT built (his "later").

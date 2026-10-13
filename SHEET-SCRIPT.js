@@ -1,5 +1,7 @@
 // ============================================================================
-// SHOPEE TRACKER — Sheet receiver script v3 (READY TO PASTE, token inside)
+// SHOPEE TRACKER — Sheet receiver script v3.2 (READY TO PASTE, token inside)
+// v3.2: orders tab gains "driver" + "customer name" columns (bot reads them off
+// the screenshot). Paste replaces v3/v3.1 wholesale, then Deploy -> New version.
 //
 // Tabs:
 //   customers : one row per customer — status + ban_reason = YOUR cells
@@ -21,7 +23,7 @@ const TOKEN = "dd273fa37cef0ed442e295645fdd45f8e3c0ec7edb697f12";
 const CUST_NAME = "customers";
 const CUST_HEAD = ["phone", "orders", "first_seen", "last_order", "status", "ban_reason"];
 const LOG_NAME = "orders";
-const LOG_HEAD = ["time", "phone", "verdict", "order number", "order id", "screenshot", "chat"];
+const LOG_HEAD = ["time", "phone", "verdict", "order number", "order id", "driver", "customer name", "screenshot", "chat"];
 
 function custSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -45,6 +47,23 @@ function logSheet_() {
     sh.appendRow(LOG_HEAD);
   } else if (sh.getLastRow() === 0) {
     sh.appendRow(LOG_HEAD);
+  } else {
+    // v3.2 header self-heal: an orders tab made by v3 gets the two new columns.
+    // Old rows are 7 wide [.., id, shot, chat]; new layout inserts driver +
+    // customer at 6-7, so existing rows shift their shot/chat right by two.
+    const cur = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+    if (cur.join("|") !== LOG_HEAD.join("|")) {
+      if (cur.length === 7 && sh.getLastRow() > 1) {
+        const n = sh.getLastRow() - 1;
+        const old67 = sh.getRange(2, 6, n, 2).getValues();
+        sh.getRange(2, 8, n, 2).setValues(old67);
+        sh.getRange(2, 6, n, 2).clearContent();
+      }
+      sh.getRange(1, 1, 1, LOG_HEAD.length).setValues([LOG_HEAD]);
+      if (sh.getLastColumn() > LOG_HEAD.length) {
+        sh.getRange(1, LOG_HEAD.length + 1, sh.getLastRow(), sh.getLastColumn() - LOG_HEAD.length).clearContent();
+      }
+    }
   }
   // phone + time + order id = TEXT columns (19-digit ids must never be numbers)
   sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@");
@@ -109,7 +128,9 @@ function doPost(e) {
   }
 
   // orders: append-only log — one row per order; existing rows self-heal (wrong id fixed,
-  // never duplicated): identity = phone|order number|time
+  // never duplicated): identity = phone|order number|time.
+  // Column map (v3.2): 1 time, 2 phone, 3 verdict, 4 order number, 5 order id,
+  // 6 driver, 7 customer name, 8 screenshot, 9 chat.
   const lsh = logSheet_();
   const ldata = lsh.getDataRange().getValues();
   const rowOf = {};
@@ -119,11 +140,13 @@ function doPost(e) {
     if (!(k in rowOf)) rowOf[k] = i + 1;
   }
   for (const r of body.log || []) {
-    const row = [r.time, r.phone, r.verdict, r.no, r.id, r.shot, r.chat];
+    const row = [r.time, r.phone, r.verdict, r.no, r.id, r.driver || "", r.customer || "", r.shot, r.chat];
     const k = lkey_(r.phone, r.no, r.time);
     if (rowOf[k]) {
       const cur = lsh.getRange(rowOf[k], 1, 1, LOG_HEAD.length).getValues()[0];
-      if (norm_(cur[4]) !== norm_(r.id) || norm_(cur[5]) !== norm_(r.shot) || norm_(cur[2]) !== norm_(r.verdict)) {
+      if (norm_(cur[4]) !== norm_(r.id) || norm_(cur[5]) !== norm_(r.driver || "") ||
+          norm_(cur[6]) !== norm_(r.customer || "") || norm_(cur[7]) !== norm_(r.shot) ||
+          norm_(cur[2]) !== norm_(r.verdict)) {
         lsh.getRange(rowOf[k], 1, 1, LOG_HEAD.length).setValues([row]);
       }
       continue;

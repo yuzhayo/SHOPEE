@@ -246,3 +246,37 @@ to build/functions/runtime + non-"all" contexts). Ear proven with synthetic upda
 `allowed_updates: message,channel_post`, pending 0, no errors; systemd `shopee-brain`
 disabled, no poller process. Polling quota bleed stopped. Remaining: one real paste from Jack
 to confirm reply + Sheet row; rollback stays `node netlify-ear.mjs rollback`.
+
+---
+
+## 12. Design dictation from Jack (not final — do not build until he says done)
+
+Jack is dictating how the tool should look/behave. This section is the wishlist;
+it stays here turn after turn until he declares it final. Do NOT start building
+from a partial list.
+
+- [ ] Data extracted from screenshots: **order ID, order number, driver name,
+      pelanggan name** (recorded turn 41; first two already work, last two are new)
+- [ ] Reply format direction (A current / B compact / C Indonesian / his own wording) —
+      asked, not yet answered
+
+**Update (turn 42) — rulings recorded, wording still open.**
+Decided: NO RECORD / REJECTED / no-number-shot flow (NOT SHOPEE | CHECKING+history |
+NO DATA + "need NUMBER AND SCREENSHOT") / banned-still-logged / wrong-number = CHECKING
+(owner history) / order ID never duplicates (ID match decides) / valid = orderID +
+order number + phone (driver/pelanggan extracted, never blocking). Still open: reply
+wording (A/B/C/his own). Do NOT build until he declares the design final.
+
+**Update (turn 44) — matrix 16/16 complete.** Cell 11: number + non-Shopee shot → number
+check (hit = CHECKING + history, miss = NO DATA). Cell 15: unreadable shot-only →
+REJECTED "unable to read order number". Open: reply wording; build on his "final".
+
+**Update (turn 46) — reply templates T1–T3 locked verbatim (Jack's own wording, CAPS
+status words, "order logged" on its own line). T4–T13: he decides later. Build only
+on his "final".**
+
+**Update (turn 48) — built & shipping.** Matrix + T1–T13 + banned-history coded;
+driver/customer extraction; Sheet v3.2 (+2 cols, self-healing); bot auto-deploy
+workflow (no PC needed after this). Harness 63/63. His taps after this: (1) Sheet
+script re-paste (v3.2), (2) real pastes to verify. Later: per-order dates, reply
+wording already locked T1–T3 (T4–T13 as built — he can still veto).

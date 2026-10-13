@@ -66,7 +66,11 @@ node cmd.mjs sudo systemctl restart shopee-brain
 node cmd.mjs sudo systemctl disable --now shopee-brain
 ```
 
-**Deploy a new bot version** (byte-verified, exact-PID discipline, never a pattern kill):
+**Deploy a new bot version** (no PC in the loop — GitHub does it):
+push `shopeefood-tracker/bot/bot.mjs` to `main` → workflow `deploy-bot.yml`
+makes the VM pull the file from the repo, syntax-checks it, swaps it in, and
+restarts the poller only if polling is on (in ear mode nothing runs to restart).
+Local byte-verified deploy still exists for emergencies:
 ```
 cd C:\VSCODE\LTX-QUASAR\SHOPEE\spike
 node deploy-v39.mjs
@@ -118,6 +122,21 @@ Rules when switching:
 deploys automatically (~40 s, workflow `deploy-ear.yml`). The Netlify site env vars
 (`FREESTYLE_API_KEY`, `TELEGRAM_SECRET`) live on the site itself — pushes never touch them.
 
+**Updating the bot:** push `shopeefood-tracker/bot/bot.mjs` to `main` → workflow
+`deploy-bot.yml` makes the VM download that exact file from the repo, `node --check`
+it, and swap it in (a broken file never replaces a working one). No PC, no cables:
+even an edit made on github.com from your phone ships by itself.
+
+| Piece | Source file | Ships via | Needs |
+|---|---|---|---|
+| Ear | `netlify-ear/**` | `deploy-ear.yml` | repo secret `NETLIFY_AUTH_TOKEN` |
+| Bot | `bot/bot.mjs` | `deploy-bot.yml` | repo secret `FREESTYLE_API_KEY`, var `VM_ID` |
+| Sheet script | `SHEET-SCRIPT.js` | **your one tap**: paste into Extensions → Apps Script → New version → Deploy | browser |
+
+**Sheet script v3.2 (one repaste, replaces v3):** the `orders` tab gains `driver` +
+`customer name` columns. The script rewrites the header itself AND shifts your
+existing rows right so old screenshots/chats stay under the right headings.
+
 ---
 
 ## 6. What has actually broken (and the cure in place)
@@ -142,6 +161,7 @@ SHOPEE\
   SHEET-SCRIPT.js            what you paste into the Sheet (Apps Script)
   .github\workflows\
     deploy-ear.yml           push to main → deploys the ear to Netlify (~40 s)
+    deploy-bot.yml           push to main → the VM pulls bot.mjs from the repo (~1 min)
   shopeefood-tracker\
     bot\bot.mjs              the bot (deployed to the VM)
     tests\bot.test.mjs       the local test harness
