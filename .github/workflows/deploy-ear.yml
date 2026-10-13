@@ -1,0 +1,30 @@
+name: Deploy ear to Netlify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "netlify-ear/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Netlify CLI
+        run: npm i -g netlify-cli@17
+
+      - name: Deploy the doorbell
+        run: >
+          netlify deploy
+          --dir netlify-ear
+          --functions netlify-ear/netlify/functions
+          --site shopeefood-ear
+          --prod
+          --auth "${{ secrets.NETLIFY_AUTH_TOKEN }}"
