@@ -5,8 +5,8 @@ const VM_ID = process.env.VM_ID || "vm-4e5fb8f51dbc4dd3a43b2cc2f23c7309";
 const ROOT = process.env.TRACKER_ROOT || "/home/ubuntu/shopeefood-tracker";
 const NODE = process.env.TRACKER_NODE || "/usr/local/bin/node";
 
-const EXEC_TIMEOUT_MS = 25000;
-const FETCH_TIMEOUT_MS = 26000;
+const EXEC_TIMEOUT_MS = 9000;
+const FETCH_TIMEOUT_MS = 10000;
 const MAX_BODY_BYTES = 20000;
 
 const json = (status, body) =>

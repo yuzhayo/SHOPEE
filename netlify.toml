@@ -6,7 +6,7 @@
   node_bundler = "esbuild"
   included_files = ["!**/*.txt"]
 
-# P1: Must be >= EXEC_TIMEOUT_MS in ear.mjs
-# Free: 10, Pro: 26
+# Self-checked via Netlify API: plan = nf_team_dev (free team tier -> 10s cap).
+# Keep exec/fetch below this; raise only if the account is upgraded to Pro.
 [functions.ear]
-  timeout = 26
+  timeout = 10
