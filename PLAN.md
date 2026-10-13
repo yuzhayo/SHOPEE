@@ -285,3 +285,6 @@ wording already locked T1–T3 (T4–T13 as built — he can still veto).
 green on new code. Left: his Sheet v3.2 re-paste + real pastes.**
 
 **Update (turn 50) — backfill live: re-paste fills blank driver/customer, nothing else moves.**
+
+**Update (turn 51) — /delete + /update live. His taps: (1) Sheet v3.3 re-paste
+(tombstones need it; /update works without), (2) try both commands on a test row.**

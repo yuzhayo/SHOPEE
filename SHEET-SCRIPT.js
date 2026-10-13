@@ -1,7 +1,7 @@
 // ============================================================================
-// SHOPEE TRACKER — Sheet receiver script v3.2 (READY TO PASTE, token inside)
-// v3.2: orders tab gains "driver" + "customer name" columns (bot reads them off
-// the screenshot). Paste replaces v3/v3.1 wholesale, then Deploy -> New version.
+// SHOPEE TRACKER — Sheet receiver script v3.3 (READY TO PASTE, token inside)
+// v3.3: honors the bot's row tombstones (/delete) and reports the count back so the
+// bot knows the Sheet is clean. Paste replaces v3.2 wholesale, then Deploy -> New version.
 //
 // Tabs:
 //   customers : one row per customer — status + ban_reason = YOUR cells
@@ -155,5 +155,25 @@ function doPost(e) {
     rowOf[k] = lsh.getLastRow();
   }
 
-  return ContentService.createTextOutput("ok");
+  // deletes (/delete): the bot's tombstones — exact identity match, bottom-up,
+  // idempotent (a re-sent tombstone simply matches nothing). Order tombstones
+  // remove log rows; customer tombstones remove the customers row (sent only when
+  // Jack deletes a whole customer — zero-order shells from bans are never listed).
+  let deleted = 0;
+  for (const d of body.delete || []) {
+    if (d.customer && !d.no) {
+      for (let i = sh.getLastRow(); i >= 2; i--) {
+        if (String(sh.getRange(i, 1).getValue()) === String(d.phone)) { sh.deleteRow(i); deleted++; }
+      }
+      continue;
+    }
+    if (!d.no) continue;
+    const k = lkey_(d.phone, d.no, d.time);
+    for (let i = lsh.getLastRow(); i >= 2; i--) {
+      const r = lsh.getRange(i, 1, 1, 5).getValues()[0];
+      if (lkey_(r[1], r[3], r[0]) === k) { lsh.deleteRow(i); deleted++; }
+    }
+  }
+
+  return ContentService.createTextOutput(`ok deleted:${deleted}`);
 }

@@ -1020,3 +1020,34 @@ validity gate, templates, ear, webhook all untouched.
 self-heal rewrite the row. Guards: blanks-only (S18b), owner-only (S18c T4 untouched),
 reply stays T3, fill logged as `backfill <phone> #<no>`. Harness 73/73 (S18a/b/c).
 RUNBOOK daily-use gained the re-paste line. Shipped via push → deploy-bot.yml.
+
+**Turn 50 outcome — v41 live.** Run 38376537769 success, VM 30,401 B = local, backfill
+present. First real heal available: re-pasting the #531 screenshot fills row 3 blanks.
+
+---
+
+**Turn 51 — Jack: "how can I edit the Sheet directly without it reverting?"**
+
+Answered from the code: SAFE today = customers.status + ban_reason (bot pulls and
+adopts them every cycle). REVERTS = every other managed cell (customers counts/dates
+recomputed; orders rows self-healed by phone|number|time identity; deleted rows in
+EITHER tab come back on next push since the bot pushes the full ledger every cycle).
+TRAP: adding his own column (e.g. notes) to either tab is wiped by the header guard
+(cur width != managed width -> clearContent beyond managed cols, every push).
+Offered: protected notes/override column via small script change + his one re-paste.
+Awaiting his answer.
+
+---
+
+**Turn 51 — /delete + /update BUILT + SHIPPED (harness 94/94).**
+
+/update (no script change): driver|customer only, by orderID or number+#no; patch →
+saveStore → push → v3.2 self-heal rewrites the row. Refusals: NO DATA / usage.
+/delete (needs script v3.3): by orderID (global), number+#no (scoped), or bare number
+(whole customer, shell NOT kept). Local removal + tombstones (pending-deletes.json,
+separate file, no store migration): order-row {phone,no,time} + customer {phone,
+customer:true}. Push carries them; cleared only on "ok deleted:N" (idempotent resend
+otherwise; old script = local delete stands, Sheet row lingers + log tells why).
+Replies T14/T15/T16 in his caps style; /start lists the new commands. Guards: exact
+match only, typo'd refs land on usage/NO DATA, every deletion logged with counts.
+RUNBOOK daily-use + v3.3 note updated.

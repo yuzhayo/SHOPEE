@@ -98,6 +98,24 @@ function saveStore() {
   renameSync(tmp, STORE); // atomic — crash can't tear the file
 }
 
+// ---- pending Sheet row deletes (for /delete): tombstones the next push carries.
+// Separate file so the customers shape never migrates. Cleared when the Sheet
+// confirms (v3.3 answers "ok deleted:N"); an older script ignores the field, so the
+// local delete still stands and the Sheet row lingers until he re-pastes.
+const DEL_FILE = `${ROOT}/notebook/pending-deletes.json`;
+let pendingDeletes = [];
+try {
+  const d = JSON.parse(readFileSync(DEL_FILE, "utf8"));
+  if (Array.isArray(d)) pendingDeletes = d;
+} catch {
+  // none pending
+}
+function saveDeletes() {
+  const tmp = DEL_FILE + ".tmp";
+  writeFileSync(tmp, JSON.stringify(pendingDeletes));
+  renameSync(tmp, DEL_FILE);
+}
+
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
   appendFileSync(LOG, line + "\n");
@@ -441,7 +459,7 @@ async function sheetPush() {
     const res = await fetch(SHEET_URL, {
       method: "POST",
       headers: { "content-type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ token: SHEET_TOKEN, rows, log: logRows }),
+      body: JSON.stringify({ token: SHEET_TOKEN, rows, log: logRows, delete: pendingDeletes }),
     });
     const txt = await res.text();
     const ok = txt.trim().startsWith("ok");
@@ -452,6 +470,18 @@ async function sheetPush() {
         r.pushedReason = r.banned ? r.banReason || "" : "";
       }
       saveStore();
+      // /delete tombstones: cleared only on explicit confirmation, resent otherwise
+      // (row delete by identity is idempotent, so a resend is always safe)
+      const m = txt.match(/deleted:(\d+)/);
+      if (pendingDeletes.length) {
+        if (m && Number(m[1]) >= pendingDeletes.length) {
+          log(`sheet confirmed ${m[1]} row deletes`);
+          pendingDeletes = [];
+          saveDeletes();
+        } else {
+          log(`sheet delete pending (${pendingDeletes.length} rows) — script predates deletes? re-paste v3.3`);
+        }
+      }
     }
     return ok;
   } catch (e) {
@@ -536,6 +566,109 @@ async function handleWho(chatId, text) {
   await send(chatId, lines.join("\n"));
 }
 
+// ---- /delete + /update: Jack's direct database tools ----
+// /update patches driver/customer cells (self-heal propagates: same identity, new
+// fields -> the Sheet rewrites the row, no script change needed).
+// /delete removes locally AND queues Sheet row tombstones (needs script v3.3;
+// without it the local delete still stands, the Sheet row lingers).
+const DEL_USAGE = "usage:\n/delete <orderID>\n/delete <number> #<order number>\n/delete <number>";
+const UPD_USAGE = "usage:\n/update <orderID> driver|customer <name>\n/update <number> #<order number> driver|customer <name>";
+
+function findEventById(id) {
+  for (const [phone, rec] of customers)
+    for (const e of rec.events) if (e.id === id) return { phone, rec, ev: e };
+  return null;
+}
+function tombstone(phone, e) {
+  pendingDeletes.push({ phone, no: e.no || "", time: e.ts ? wibStamp(e.ts) : "" });
+  saveDeletes();
+}
+const deleteFootnote = () =>
+  pendingDeletes.length ? "\nSheet cleanup pending: re-paste the script (v3.3)." : "";
+
+async function dropEvents(chatId, phone, rec, victims) {
+  for (const e of victims) tombstone(phone, e);
+  const gone = new Set(victims);
+  rec.events = rec.events.filter((e) => !gone.has(e));
+  saveStore();
+  const first = victims[0];
+  log(`delete order #${first.no} ${first.id} from ${phone} (${victims.length} row${victims.length === 1 ? "" : "s"}) (chat ${chatId})`);
+  await sheetPush(); // push first: the footnote below reports the true pending state
+  await send(chatId,
+    `🗑️ order #${first.no} ${first.id} — DELETED\nwas ${phone}'s order · ${rec.events.length} order${rec.events.length === 1 ? "" : "s"} left.` +
+    deleteFootnote());
+}
+
+async function handleDelete(chatId, text) {
+  const rest = argAfter("delete", text).trim();
+  // form 1: a bare 14-20 digit order ID (globally unique, no phone needed)
+  const idm = rest.match(/^(\d{14,20})$/);
+  if (idm) {
+    const hit = findEventById(idm[1]);
+    if (!hit) { await send(chatId, `🔍 NO DATA — order ${idm[1]} not in database.`); return; }
+    return dropEvents(chatId, hit.phone, hit.rec, [hit.ev]);
+  }
+  // form 2/3: a number, optionally with #order number
+  const phone = normalizePhone(rest);
+  if (!phone) { await send(chatId, DEL_USAGE); return; }
+  const rec = customers.get(phone);
+  if (!rec) { await send(chatId, `🔍 ${phone} — NO RECORD\nnot in database.`); return; }
+  const nom = rest.match(/#(\d{1,7})\b/);
+  if (!nom) {
+    // whole customer (exact number only — a typo'd order ref never lands here)
+    const n = rec.events.length;
+    for (const e of rec.events) tombstone(phone, e);
+    pendingDeletes.push({ phone, customer: true });
+    saveDeletes();
+    customers.delete(phone);
+    saveStore();
+    log(`delete customer ${phone} (${n} orders) (chat ${chatId})`);
+    await sheetPush();
+    await send(chatId,
+      `🗑️ ${phone} — CUSTOMER DELETED\n${n} order${n === 1 ? "" : "s"} removed.` +
+      deleteFootnote());
+    return;
+  }
+  const victims = rec.events.filter((e) => e.no === nom[1]);
+  if (!victims.length) { await send(chatId, `🔍 NO DATA — order #${nom[1]} not under ${phone}.`); return; }
+  return dropEvents(chatId, phone, rec, victims);
+}
+
+async function handleUpdateCmd(chatId, text) {
+  const rest = argAfter("update", text).trim();
+  const m = rest.match(/^(.*?)\b(driver|customer)\b\s+(.+)$/i);
+  if (!m) { await send(chatId, UPD_USAGE); return; }
+  const field = m[2].toLowerCase();
+  const value = m[3].trim().slice(0, 40);
+  if (!value) { await send(chatId, UPD_USAGE); return; }
+  const head = m[1].trim();
+  let targets = [];
+  const idm = head.match(/^(\d{14,20})$/);
+  if (idm) {
+    const hit = findEventById(idm[1]);
+    if (hit) targets = [hit];
+  } else {
+    const phone = normalizePhone(head);
+    const nom = head.match(/#(\d{1,7})\b/);
+    if (phone && nom) {
+      const rec = customers.get(phone);
+      if (rec) targets = rec.events.filter((e) => e.no === nom[1]).map((ev) => ({ phone, rec, ev }));
+    }
+  }
+  if (!targets.length) { await send(chatId, `🔍 NO DATA — nothing matching "${head}" to update.`); return; }
+  const lines = [];
+  for (const t of targets) {
+    const old = t.ev[field] || "(blank)";
+    if (old !== value) { t.ev[field] = value; lines.push(`${field}: ${old} → ${value}`); }
+    else lines.push(`${field}: unchanged (${value})`);
+  }
+  saveStore();
+  const first = targets[0].ev;
+  log(`update #${first.no} ${first.id}: ${lines.join("; ")} (chat ${chatId})`);
+  await send(chatId, `✏️ order #${first.no} ${first.id} — UPDATED\n${lines.join("\n")}`);
+  await sheetPush();
+}
+
 // ---- update handling ----
 async function handleUpdate(u) {
   const msg = u.message ?? u.channel_post;
@@ -550,7 +683,7 @@ async function handleUpdate(u) {
       chatId,
       "ShopeeFood tracker.\n" +
         "number = check · number + screenshot = record order · screenshot alone = lookup\n\n" +
-        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status"
+        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status\n/delete <orderID>\n/update <orderID> driver|customer <name>"
     );
     return;
   }
@@ -565,6 +698,8 @@ async function handleUpdate(u) {
   if (/^\/ban\b/.test(text)) return handleBan(chatId, text);
   if (/^\/unban\b/.test(text)) return handleUnban(chatId, text);
   if (/^\/who\b/.test(text)) return handleWho(chatId, text);
+  if (/^\/delete\b/.test(text)) return handleDelete(chatId, text);
+  if (/^\/update\b/.test(text)) return handleUpdateCmd(chatId, text);
   if (text.startsWith("/")) return;
 
   const nowIso = new Date().toISOString();

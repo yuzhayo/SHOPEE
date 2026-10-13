@@ -64,8 +64,9 @@ const server = createServer(async (req, res) => {
   }
   if (url.pathname === "/exec") {
     if (req.method === "GET") { res.end(JSON.stringify({ rows: sheetRows })); return; }
-    pushes.push(JSON.parse(body));
-    res.end("ok");
+    const payload = JSON.parse(body);
+    pushes.push(payload);
+    res.end(`ok deleted:${(payload.delete || []).length}`);
     return;
   }
   res.end(JSON.stringify({ ok: false, description: `unhandled ${req.method} ${url.pathname}` }));
@@ -424,6 +425,123 @@ console.log("S18c wrong-number paste never fills the owner's blanks");
   check("T4 warning", lastReply().startsWith("⚠️ 6289393939393 — CHECKING"));
   const ev = store(root)["6289292929292"].events[0];
   check("owner blanks untouched", ev.driver === "" && ev.customer === "");
+}
+
+console.log("S19a /delete by order ID removes the order + queues the Sheet tombstone");
+{
+  const root = sandbox("s19a");
+  sheetRows = []; pushes.length = 0; sent.length = 0;
+  const seed = {
+    first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+    events: [
+      { no: "530", id: "3300155108395520491", driver: "RAHMAT FADLI", customer: "Nadya", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" },
+      { no: "531", id: "3301316233709056913", driver: "BUDI SANTOSO", customer: "Siti", ts: 1791804490000, shot: "b.jpg", chat: 555, verdict: "returning" },
+    ],
+    pushedStatus: "not banned", pushedReason: "",
+  };
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({ "6289090909090": seed }));
+  const r = await runOnce(root, textUpdate("/delete 3300155108395520491"));
+  const t = lastReply();
+  checkExit(r);
+  check("T14 exact", t === "🗑️ order #530 3300155108395520491 — DELETED\nwas 6289090909090's order · 1 order left.", t.replace(/\n/g, " | "));
+  check("event gone locally, other kept", store(root)["6289090909090"].events.length === 1 && store(root)["6289090909090"].events[0].no === "531");
+  const last = pushes.at(-1);
+  check("tombstone queued with row identity", last.delete.length === 1 && last.delete[0].phone === "6289090909090" && last.delete[0].no === "530" && typeof last.delete[0].time === "string" && last.delete[0].time.length > 0, JSON.stringify(last.delete));
+  check("deleted order absent from the push log", !last.log.some((l) => l.id === "3300155108395520491"));
+}
+
+console.log("S19b /delete unknown order ID refuses");
+{
+  const root = sandbox("s19b");
+  sheetRows = []; sent.length = 0;
+  await runOnce(root, textUpdate("/delete 9999999999999999"));
+  check("NO DATA refusal", lastReply() === "🔍 NO DATA — order 9999999999999999 not in database.", lastReply());
+}
+
+console.log("S19c /delete by number + #number");
+{
+  const root = sandbox("s19c");
+  sheetRows = []; pushes.length = 0; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289191919191": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/delete 089191919191 #530"));
+  check("deleted, zero left", lastReply().startsWith("🗑️ order #530 3300155108395520491 — DELETED") && lastReply().includes("0 orders left"), lastReply().replace(/\n/g, " | "));
+  check("customer shell kept (number still known)", !!store(root)["6289191919191"] && store(root)["6289191919191"].events.length === 0);
+  await runOnce(root, textUpdate("/delete 089191919191 #999"));
+  check("unknown #no under a known number refuses", lastReply() === "🔍 NO DATA — order #999 not under 6289191919191.", lastReply());
+}
+
+console.log("S20 /delete whole customer removes record + both tombstone kinds");
+{
+  const root = sandbox("s20");
+  sheetRows = []; pushes.length = 0; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289292929292": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [
+        { no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" },
+        { no: "531", id: "3301316233709056913", driver: "", customer: "", ts: 1791804490000, shot: "b.jpg", chat: 555, verdict: "returning" },
+      ],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/delete 089292929292"));
+  const t = lastReply();
+  check("T15 exact", t === "🗑️ 6289292929292 — CUSTOMER DELETED\n2 orders removed.", t.replace(/\n/g, " | "));
+  check("record gone locally", !store(root)["6289292929292"]);
+  const last = pushes.at(-1);
+  check("2 row tombstones + 1 customer tombstone", last.delete.length === 3 && last.delete.some((d) => d.customer === true && d.phone === "6289292929292"), JSON.stringify(last.delete));
+  check("customer absent from pushed rows", !last.rows.some((r) => r.phone === "6289292929292"));
+}
+
+console.log("S21a /update by order ID patches one cell, propagates on push");
+{
+  const root = sandbox("s21");
+  sheetRows = []; pushes.length = 0; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289393939393": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update 3300155108395520491 driver RAHMAT FADLI"));
+  check("T16 exact", lastReply() === "✏️ order #530 3300155108395520491 — UPDATED\ndriver: (blank) → RAHMAT FADLI", lastReply().replace(/\n/g, " | "));
+  check("store patched", store(root)["6289393939393"].events[0].driver === "RAHMAT FADLI");
+  check("push log row carries the correction", pushes.at(-1).log.at(-1).driver === "RAHMAT FADLI");
+}
+
+console.log("S21b /update by number + #number, multi-word name");
+{
+  const root = sandbox("s21b");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289494949494": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "531", id: "3301316233709056913", driver: "BUDI SANTOSO", customer: "", ts: 1791804490000, shot: "b.jpg", chat: 555, verdict: "returning" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/update 089494949494 #531 customer Siti Rahma"));
+  check("patched with spaces kept", lastReply().includes("customer: (blank) → Siti Rahma"), lastReply().replace(/\n/g, " | "));
+  check("store patched", store(root)["6289494949494"].events[0].customer === "Siti Rahma");
+}
+
+console.log("S22 refusals: unknown target, bad field");
+{
+  const root = sandbox("s22");
+  sheetRows = []; sent.length = 0;
+  await runOnce(root, textUpdate("/update 9999999999999999 driver X"));
+  check("unknown order refuses", lastReply().startsWith("🔍 NO DATA"), lastReply());
+  await runOnce(root, textUpdate("/update 3300155108395520491 phone 123"));
+  check("bad field shows usage", lastReply().includes("/update <orderID> driver|customer <name>"), lastReply().replace(/\n/g, " | "));
+  await runOnce(root, textUpdate("/delete gibberish"));
+  check("bad delete shows usage", lastReply().includes("/delete <orderID>"), lastReply().replace(/\n/g, " | "));
 }
 
 server.close();
