@@ -1118,3 +1118,177 @@ targeted mismatch → waiting reply); wrong-number → T4; unreadable → T7/T9,
 no-keys never consumes; non-photo messages run normally; expiry falls back silently.
 /cancel stops it (or "nothing to cancel"). Corrections ride self-heal — no script change.
 RUNBOOK recipe updated.
+
+**Turn 57 outcome — v44 live.** Run 38381324669 success, VM 44,626 B = local.
+
+**Turn 58 — Jack: "does now all is complete?" Health-checked before answering:**
+webhook pending 0; last_error = one 500 (dated below — matches the turn-40 missing-key
+probes, nothing since); unit inactive (correct, ear mode); bot.log 314 lines alive.
+Found 2 STUCK tombstones in pending-deletes.json: order #530 + customer 6285790962643
+(Jack deleted his old test row — local delete worked). Stuck = Sheet script v3.3 NOT
+re-pasted yet (old script answers "ok" with no deleted count). Answer: everything
+ordered is live; single outstanding tap = v3.3 re-paste, then those two tombstones
+clear on the next push. Open otherwise: per-order dates (his "later").
+
+**Turn 59 — v3.3 NOT live yet (proven, not guessed).** Synthetic push just now + one at
+09:45 both logged "sheet delete pending — script predates deletes": the exec URL still
+runs the pre-v3.3 script. Jack''s "test delete works" = the local reply (works without
+v3.3); the Sheet rows are still there, tombstones still queued. Told him the usual miss:
+paste+save alone doesn''t move the exec URL — needs Deploy → Manage deployments →
+pencil → New version → Deploy.
+
+**Turn 60 — Spreadsheet MCP (official Google Sheets+Drive MCP) install.**
+Entries added to global opencode.json (sheets + drive, remote, OAuth default); mcp list
+shows both "connected" (transport only). Real calls fail: "requires a login before it
+can register a client" + OpenCode DCR refused ("does not support dynamic client
+registration"). So Google demands a pre-registered OAuth client from Jack''s GCP project:
+his taps = (maybe) Preview Program → Cloud project → 4 APIs → consent + scopes →
+Web-app client with loopback redirect → hand me client id/secret → I wire env + he
+signs in once via /mcps. Value note given: tracker already reaches the Sheet via the
+bot bridge; this adds general Sheet/Drive power.
+
+**Turn 61 — Jack in Cloud Console (Logs Explorer, project shopee-511518).**
+He asked "what is it": audit log showing his own CreateProject (17:19:13) + API
+EnableService batch. Told him: diary, nothing to do here; next = consent screen.
+
+**Turn 62 — Jack asked "how is it step 3".** Gave the consent-screen click path
+(Branding → app name → External → test user self → 3 manual scopes → Save).
+
+**Turn 63 — Auth Platform "need additional access" wall.** Cause: top-bar project
+picker says "Select a project" — he is not operating inside shopee-511518, so the
+page cannot load its auth config (he owns the project; nothing is actually missing).
+Fix: click the picker → select SHOPEE. Told him to close the "Request access" panel,
+not request anything.
+
+**Turn 64 — Step 3 DONE (verified from his screenshot).** Data Access shows all three
+scopes saved: drive.file, spreadsheets, drive.readonly. Gave step 4 (OAuth client).
+
+**Turn 65 — OAuth client form: URL landed in JavaScript origins (red error) instead of
+redirect URIs.** Told him: clear the top box, + Add URI under Authorized redirect URIs,
+paste there, tick the AI-agent checkbox, Create.
+
+**Turn 66 — OAuth client wired.** client_secret JSON nesting is {web:{...}} (first read
+missed, setx failed safe). .gitignore += client_secret_*.json BEFORE anything else
+(public repo — file verified ignored, never committed). Env GOOGLE_MCP_CLIENT_ID/SECRET
+set; sheets+drive entries gained oauth {client_id/secret/scope/callback_port/
+redirect_uri}. Remaining: Jack signs in via /mcps (his tap, cannot do for him).
+
+**Turn 67 — Sheets/Drive auth "nothing happened": root cause = running service predates
+setx (registry has keys, live processes see nothing; transport "connected" is a mirage).**
+Fix per his standing keys order (same as github/netlify): client id+secret inlined into
+opencode.json oauth blocks (local-only file, service hot-reloads, no restart). OAuth
+sign-in itself still his tap: /mcps → sheets → sign in → drive.
+
+**Turn 68 — Service restarted (it was serving a pre-credentials snapshot: log proved
+DCR attempt at 10:37:18 despite static creds configured).** Restart killed my shell
+call mid-flight as expected; service is back, all 8 servers connected on fresh config.
+Ball with Jack: retry /mcps sign-in for sheets, then drive.
+
+**Turn 69 — V2 migration FIXED the auth.** Fresh service + mcp.servers shape → auth
+flow now uses the static client_id (visible in the consent URL) and sits at "Waiting
+for authorization..." with the 19876 listener up. Root cause chain: V1 shape carried
+connections but the login layer only reads mcp.servers. Handed Jack the consent URL;
+his approve auto-completes it. Then drive same way.
+
+**Turn 70 — Sheets SIGNED IN (his screenshot: Authorization successful).** Drive auth
+flow started, consent URL captured and handed over. Awaiting his approve, then end-to-
+end proof: find SHOPEE_CUSTOMER via drive, read it via sheets.
+
+**Turn 71 — Sheets+Drive signed in, but ALL data calls 403 "caller does not have
+permission".** Login/token flow proven working; refusal is at the data layer.
+Prime suspect: Developer Preview Program membership (the one prerequisite never
+confirmed). Distinguishing test: direct sheets read needs the spreadsheet ID —
+asked Jack to paste it from his browser bar. If sheets 403s too → program gate.
+
+**Turn 72 — Used Context7 per Jack''s instruction (taylorwilsdon MCP + official Drive
+docs): background only, no exact cause for the uniform 403.** Decisive test instead:
+direct sheets read with the real spreadsheet ID (asked Jack to paste it from his URL
+bar). Sheets 403 → Preview Program gate (join link ready); sheets OK → drive-scoped
+problem, fix drive alone.
+
+**Turn 73 — ROOT CAUSE PROVEN.** Direct sheets read returned: "Access to this tool
+requires that your Google Cloud project (828880466380) is enrolled in the Google
+Workspace Developer Preview Program." So: auth/scopes/project/APIs all correct; the
+Preview Program gate blocks every data call. Fix = his tap: join the program with
+project 828880466380, then I retest drive search + sheets read immediately.
+
+**Turn 74 — Pivoted to taylorwilsdon community server (Gmail-safe, normal APIs).**
+Installed as local entry "wspace": uvx workspace-mcp --tools drive sheets --tool-tier
+core (stdio), env inline (existing client id/secret, port 8000, redirect
+http://localhost:8000/oauth2callback, insecure-transport 1). Official preview
+sheets+drive entries disabled (kept, not deleted). Reuses project/APIs/consent/client.
+His taps: (1) add the localhost:8000 redirect URI to the OAuth client, (2) approve the
+sign-in on first use.
+
+**Turn 75 — Redirect URI added (screenshot proof) but NOT saved yet (Save blue).**
+Told him: Save, allow a few minutes propagation (Google''s own note), then I fire the
+first wspace search (its approval pops the sign-in).
+
+**Turn 76 — redirect_uri_mismatch on wspace consent.** Requested URI
+(http://localhost:8000/oauth2callback) matches the saved entry exactly — cause is
+Google-side propagation (their own note: minutes to hours). Told him: wait ~15 min,
+retry the same link, change nothing.
+
+**Turn 77 — redirect_uri_mismatch persists despite exact match.** Asked him to reopen
+the client page and confirm both URIs still listed (save may not have stuck).
+Fallback ready: new Desktop-type client (loopback-exempt, no registration wait) → I
+swap env to it.
+
+**Turn 77 — LIVE INCIDENT found while answering "can you see my sheet".**
+(a) Sheet key swap: deployed script answers the FILE token (8.6KB rows returned),
+not SHEET-TOKEN.txt → his v3.3 paste installed the .js key; bot locked out ("denied")
+since. Local txt synced to deployed key. (b) VM host 409 PLACEMENT_REJECTED twice
+(memory headroom exhausted) → VM-side token write BLOCKED, ear wakes failing = bot
+deaf; Telegram queues 24h so no orders lost; Sheet+tombstones backfill on recovery
+(full-ledger push every cycle). Asked Jack for Freestyle dashboard status.
+wspace/Desktop-client quest paused behind the fire.
+
+**Turn 78 — VM stuck "Starting" (his dashboard screenshot; terminal: still starting
+after 20s).** Host-side boot stall, matches our 409s. Told him: data safe on disk,
+DON''T Delete, don''t hammer Start, take one Snapshot as insurance, wait 15-30 min
+then one Start retry; Telegram holds orders 24h, backlog self-heals on boot. I keep
+retrying exec from my side too.
+
+**Turn 79 — Snapshots: "pre-tracker" (Oct 12) already exists, but predates the current
+bot + ledger; told him to also take the fresh one with a dated slug
+(shopee-2026-10-13), then wait on the boot.**
+
+**Turn 80 — Snapshot also blocked (needs running/paused; VM still Starting).**
+Only the Oct-12 pre-tracker snapshot stands as insurance. Told him: fix the slug typo
+(shopee-2826 → 2026) when retrying later, keep waiting, consider Freestyle support if
+it sits for hours. Nothing else actionable from either side right now.
+
+**Turn 81 — Jack on the pre-tracker snapshot page (no question).** Warned: do NOT
+Create VM from it yet — forks the setup (two VMs, quota, confusion) and the Oct-12
+disk lacks the current bot + this week''s memory. Waiting remains the play; worst
+case the Sheet''s full orders log can rebuild the ledger.
+
+**Turn 82 — VM now cleanly Stopped (was wedged Starting).** The stuck boot is over;
+a fresh Start has a clean shot. Told him: press Start VM once, wait for Running,
+then terminal. If it boots I take over (token fix, backlog check).
+
+**Turn 83 — VM RECOVERED, incident closed on infra side.** Token written to VM config;
+sheet sync ok again (45 customers, 47 orders). Tombstones STILL stuck (sync ok without
+deleted count) → v3.3 conclusively not deployed; re-paste + real New-version switch
+still needed, then any message flushes. Webhook/unit rechecked.
+
+**Turn 84 — VINDICATION: v3.3 proven LIVE via fake-tombstone POST ("ok deleted:0").**
+My re-paste chorus was wrong; Jack right twice. Real bug class narrowed: tombstones
+never confirm. Two branches: (a) rows already gone (his manual delete or an early
+flush) → MY confirm logic too strict (deleted:0 forever → stuck, fix = expire
+tombstones after N unmatched pushes with a loud log); (b) rows still there →
+identity mismatch in lkey (needs cell-level look). Asked him the one distinguisher:
+is the #530 row still in the Sheet?
+
+**Turn 85 — Jack: "why does it matter, if gone I just re-add, right?"** Answered: no
+re-add needed — gone = desired end state (test row), only my bot''s stuck bookkeeping
+remains (harmless noise); still-there = delete truly broken (wrong visible truth).
+The question decides WHERE the bug lives (bot confirm logic vs Sheet identity).
+
+---
+
+**Turn 86 — Tombstone expiry BUILT + SHIPPED (129/129).** v3.3 hears but matches
+nothing 3 pushes running → retire + loud log; old script (no confirm channel) →
+wait forever, never expire. Tombstones carry attempts (stripped before send,
+normalized on load — no store migration). Proved his delete worked via bridge
+(44 customers, test row gone) before building.

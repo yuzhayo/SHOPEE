@@ -106,7 +106,7 @@ const DEL_FILE = `${ROOT}/notebook/pending-deletes.json`;
 let pendingDeletes = [];
 try {
   const d = JSON.parse(readFileSync(DEL_FILE, "utf8"));
-  if (Array.isArray(d)) pendingDeletes = d;
+  if (Array.isArray(d)) pendingDeletes = d.map((t) => ({ attempts: 0, ...t }));
 } catch {
   // none pending
 }
@@ -527,7 +527,7 @@ async function sheetPush() {
     const res = await fetch(SHEET_URL, {
       method: "POST",
       headers: { "content-type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ token: SHEET_TOKEN, rows, log: logRows, delete: pendingDeletes }),
+      body: JSON.stringify({ token: SHEET_TOKEN, rows, log: logRows, delete: pendingDeletes.map(({ attempts, ...t }) => t) }),
     });
     const txt = await res.text();
     const ok = txt.trim().startsWith("ok");
@@ -546,8 +546,19 @@ async function sheetPush() {
           log(`sheet confirmed ${m[1]} row deletes`);
           pendingDeletes = [];
           saveDeletes();
-        } else {
+        } else if (!m) {
+          // old script: no confirm channel — wait indefinitely, never expire
           log(`sheet delete pending (${pendingDeletes.length} rows) — script predates deletes? re-paste v3.3`);
+        } else {
+          // v3.3 heard us but matched nothing 3 pushes running -> the rows are
+          // already gone (hand-deleted or flushed earlier): retire loudly
+          pendingDeletes.forEach((t) => { t.attempts = (t.attempts || 0) + 1; });
+          const dead = pendingDeletes.filter((t) => t.attempts >= 3);
+          pendingDeletes = pendingDeletes.filter((t) => t.attempts < 3);
+          saveDeletes();
+          for (const t of dead)
+            log(`tombstone expired unmatched, dropped: ${t.customer ? `customer ${t.phone}` : `order #${t.no} ${t.phone}`} (row already gone?)`);
+          if (pendingDeletes.length) log(`sheet delete pending (${pendingDeletes.length} rows)`);
         }
       }
     }
@@ -647,7 +658,7 @@ function findEventById(id) {
   return null;
 }
 function tombstone(phone, e) {
-  pendingDeletes.push({ phone, no: e.no || "", time: e.ts ? wibStamp(e.ts) : "" });
+  pendingDeletes.push({ phone, no: e.no || "", time: e.ts ? wibStamp(e.ts) : "", attempts: 0 });
   saveDeletes();
 }
 const deleteFootnote = () =>
@@ -685,7 +696,7 @@ async function handleDelete(chatId, text) {
     // whole customer (exact number only — a typo'd order ref never lands here)
     const n = rec.events.length;
     for (const e of rec.events) tombstone(phone, e);
-    pendingDeletes.push({ phone, customer: true });
+    pendingDeletes.push({ phone, customer: true, attempts: 0 });
     saveDeletes();
     customers.delete(phone);
     saveStore();

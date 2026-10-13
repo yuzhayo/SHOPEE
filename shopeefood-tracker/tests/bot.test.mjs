@@ -37,6 +37,8 @@ const sent = [];     // sendMessage payloads
 const pushes = [];   // Sheet POST payloads
 let sheetRows = [];  // customers rows the Sheet hands back on GET
 let failSends = 0;   // refuse this many sendMessage calls first (P8)
+let stubDeleted = null; // override the deleted: count (null = confirm all tombstones)
+let legacySheet = false; // old script: bare "ok", no confirm channel
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://stub");
@@ -66,7 +68,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET") { res.end(JSON.stringify({ rows: sheetRows })); return; }
     const payload = JSON.parse(body);
     pushes.push(payload);
-    res.end(`ok deleted:${(payload.delete || []).length}`);
+    res.end(legacySheet ? "ok" : `ok deleted:${stubDeleted ?? (payload.delete || []).length}`);
     return;
   }
   res.end(JSON.stringify({ ok: false, description: `unhandled ${req.method} ${url.pathname}` }));
@@ -800,6 +802,40 @@ console.log("S27 /flag refusals + /unflag");
   await runOnce(root, textUpdate("/flag driver Speedy"));
   await runOnce(root, textUpdate("/unflag driver speedy"));
   check("unflag hit (case-insensitive)", lastReply() === "✅ driver SPEEDY unflagged.", lastReply());
+}
+
+console.log("S29a old script: tombstones wait forever, never expire");
+{
+  const root = sandbox("s29a");
+  sheetRows = []; sent.length = 0; legacySheet = true;
+  writeFileSync(join(root, "notebook", "pending-deletes.json"), JSON.stringify([
+    { phone: "6289090909090", no: "530", time: "2026-10-12 18:28" },
+  ]));
+  const r = await runOnce(root, textUpdate("089090909090"));
+  checkExit(r);
+  const pend = JSON.parse(readFileSync(join(root, "notebook", "pending-deletes.json"), "utf8"));
+  check("still queued, attempts untouched", pend.length === 1 && (pend[0].attempts || 0) === 0, JSON.stringify(pend));
+  check("no attempts key leaks to the Sheet", pushes.at(-1).delete[0].attempts === undefined);
+  legacySheet = false;
+}
+
+console.log("S29b v3.3 zeros retire the tombstone on the 3rd strike");
+{
+  const root = sandbox("s29b");
+  sheetRows = []; sent.length = 0; stubDeleted = 0;
+  writeFileSync(join(root, "notebook", "pending-deletes.json"), JSON.stringify([
+    { phone: "6289090909090", no: "530", time: "2026-10-12 18:28" },
+    { phone: "6289090909090", customer: true },
+  ]));
+  await runOnce(root, textUpdate("089090909090"));
+  await runOnce(root, textUpdate("089090909090"));
+  let pend = JSON.parse(readFileSync(join(root, "notebook", "pending-deletes.json"), "utf8"));
+  check("2 strikes: still queued", pend.length === 2 && pend[0].attempts === 2);
+  const r = await runOnce(root, textUpdate("089090909090"));
+  pend = JSON.parse(readFileSync(join(root, "notebook", "pending-deletes.json"), "utf8"));
+  check("3rd strike: retired", pend.length === 0);
+  check("loud log per tombstone", (r.out.match(/tombstone expired unmatched/g) || []).length === 2, r.out.split("\n").filter((l) => l.includes("expired")).join(" | "));
+  stubDeleted = null;
 }
 
 server.close();
