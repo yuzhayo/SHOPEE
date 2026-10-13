@@ -1,0 +1,21 @@
+name: Deploy bot to VM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "shopeefood-tracker/bot/bot.mjs"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ship bot.mjs onto the VM (pulls from this repo, syntax-gated)
+        run: |
+          CMD='cd /home/ubuntu/shopeefood-tracker && curl -sL https://raw.githubusercontent.com/yuzhayo/SHOPEE/main/shopeefood-tracker/bot/bot.mjs -o bot/bot.mjs.new && node --check bot/bot.mjs.new && mv bot/bot.mjs.new bot/bot.mjs && (systemctl is-active --quiet shopee-brain && sudo systemctl restart shopee-brain && echo restarted-poller || echo ear-mode-no-restart-needed) && echo BOT-UPDATED $(wc -c < bot/bot.mjs)'
+          PAYLOAD=$(jq -n --arg cmd "$CMD" '{command: $cmd, timeoutMs: 90000}')
+          curl -s -X POST "https://api.freestyle.sh/v5/vms/${{ vars.VM_ID }}/exec-await" \
+            -H "Authorization: Bearer ${{ secrets.FREESTYLE_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
