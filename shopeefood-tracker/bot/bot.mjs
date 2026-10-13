@@ -1007,16 +1007,6 @@ async function handleUpdate(u) {
 }
 
 // ---- main loop (dev mode: long polling; production switch = Phase 6) ----
-const LOCK_FILE = `${ROOT}/notebook/.bot.lock`;
-async function acquireLock(timeoutMs = 8000) {
-  const end = Date.now() + timeoutMs;
-  for (let i = 0; i < 400; i++) {
-    try { writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" }); return true; } catch (e) {}
-    if (Date.now() >= end) return false;
-    await sleep(25);
-  }
-  return false;
-}
 let offset = 0;
 try {
   offset = Number(readFileSync(OFFSET_FILE, "utf8")) || 0;
@@ -1106,11 +1096,6 @@ async function runOnce() {
     log(`--once: stale update ${u.update_id} (${Math.round(ageSec / 60)} min old) -> acked, not answered`);
     return finish(0);
   }
-  if (!(await acquireLock())) {
-    log(`--once: lock timeout on update ${u.update_id} -> retry`);
-    finish(1); // failed -> the ear asks Telegram to retry
-    return;
-  }
   try {
     await handleUpdate(u);
     markSeen(u.update_id);
@@ -1118,8 +1103,6 @@ async function runOnce() {
   } catch (e) {
     log(`--once: handle failed: ${e.message}`);
     finish(1); // failed -> the ear asks Telegram to retry
-  } finally {
-    try { unlinkSync(LOCK_FILE); } catch {}
   }
 }
 
