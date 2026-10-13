@@ -6,7 +6,8 @@
 //
 // Secrets stay in files: VPS-KEY.txt (VM), BOT-KEY.txt (Telegram),
 // WEBHOOK-SECRET.txt (generated here once, shared with Telegram + Netlify).
-import { readFileSync, writeFileSync, existsSync, randomBytes } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 
 process.env.FREESTYLE_API_KEY = readFileSync("../VPS-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
 const { Freestyle } = await import("freestyle");

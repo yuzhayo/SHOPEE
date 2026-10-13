@@ -814,3 +814,41 @@ the two modes + switch rules, the observed failures with their cures, folder map
 supervised, all six audit fixes + the doorbell mode installed but unused). What is needed for
 step 2: **Jack signs up on Netlify (free, ~3 taps) and drags in the folder I give him** — then
 `env` + `switch` + one real paste, and the quota bleed stops.
+
+
+**Turn 40 — GitHub-driven deploy built, ear verified, SWITCHED TO PRODUCTION.**
+
+Jack's directive: install the GitHub MCP with `GITHUB-PAT.txt` (done: remote server
+`api.githubcopilot.com/mcp/`, token inlined in the OpenCode config because the running
+session has no env var - `opencode mcp list`: all 6 servers connected, `get_me` → `yuzhayo`).
+Also his standing rule: deploys must come from GitHub, find the cause if it won't.
+
+**Cause found (Netlify UI route):** Netlify has no GitHub OAuth grant, so repo fields on
+`/api/v1/sites` are ignored silently - only his browser consent could fix that. **Worked
+around it with the GitHub side instead:** repo secret `NETLIFY_AUTH_TOKEN` (set via `gh secret set`),
+workflow `.github/workflows/deploy-ear.yml` (on push to `main` touching `netlify-ear/**` or manual
+dispatch → `netlify deploy --dir netlify-ear --functions ... --site shopeefood-ear --prod`).
+First push of the workflow was **rejected by GitHub**: stored git credential lacks the `workflow`
+scope → committed via the MCP instead (commit `d872946`), local branch resynced with `git pull`.
+Run `38351663986`: **success** → Netlify deploy `6acdc1e1` (commit d872946) `ready`,
+`GET /.netlify/functions/ear` → **200 {"ok":true,"note":"doorbell idle"}** (functions now
+properly bundled - the earlier zip route never registered them).
+
+**Env vars (the real API):** site-level `PATCH /sites/{id}` is silently ignored; the working
+route is account-scoped: `POST /api/v1/accounts/{account_id}/env?site_id={site}` with an ARRAY
+body, and secrets may NOT use scope `post_processing`, NOT context `all`, and context `branch`
+needs a branch name → set both `FREESTYLE_API_KEY` + `TELEGRAM_SECRET` with 4 contexts
+(dev, branch-deploy, deploy-preview, production). Confirmed by `GET /sites/{id}/env`.
+
+**Ear verified end-to-end before touching Telegram:**
+- wrong secret → **403 `{"error":"forbidden"}`**
+- right secret (fake chat 99999, bare number) → **200 `{"ok":true,"update_id":990003}`**
+- VM log proves the chain ran: `[05:42:46Z] reply check/unknown 6280000000000 -> chat 99999`
+
+**SWITCHED (production):** `node netlify-ear.mjs switch https://shopeefood-ear.netlify.app`
+(fixed a crash first: `randomBytes` imported from `node:fs` instead of `node:crypto`).
+Telegram `getWebhookInfo` → url = `.../ear`, `allowed_updates: message,channel_post`,
+**pending 0, no error ever**; VM: unit `inactive` + `disabled`, `no-poller-process`.
+Polling quota bleed **stopped**. Rollback = `node netlify-ear.mjs rollback` (proven earlier).
+
+**Status: step 3 of 3 = one real paste from Jack** to confirm reply + Sheet row.

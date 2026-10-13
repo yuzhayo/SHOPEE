@@ -234,3 +234,15 @@ guard · P8 reply retry · P10 log identity · P11 WIB screenshot folders · P13
 (`netlify-ear/`, zero dependencies, drag-and-drop, Telegram secret-token check); switch
 script `spike/netlify-ear.mjs env|switch|rollback`. Remaining for the ear: Jack's Netlify
 signup (3 taps), then `env` + `switch` + one real paste. Polling mode stays live meanwhile.
+
+**2026-10-13 (turn 40) - Deploy route moved to GitHub; ear in production.**
+GitHub MCP installed (repo `yuzhayo/SHOPEE` now reachable from the agent, `get_me` = `yuzhayo`).
+Auto-deploy built on the GitHub side because the Netlify UI link needs a browser consent Jack
+never granted: repo secret `NETLIFY_AUTH_TOKEN` + workflow `deploy-ear.yml` → any push touching
+`netlify-ear/**` redeploys the site in ~40 s (Actions run success, deploy ready, function 200).
+Site env vars set the way the API actually wants them (account-scoped POST, secrets restricted
+to build/functions/runtime + non-"all" contexts). Ear proven with synthetic updates
+(wrong secret 403 / right secret 200 + VM log line), then **switched**: webhook → ear,
+`allowed_updates: message,channel_post`, pending 0, no errors; systemd `shopee-brain`
+disabled, no poller process. Polling quota bleed stopped. Remaining: one real paste from Jack
+to confirm reply + Sheet row; rollback stays `node netlify-ear.mjs rollback`.

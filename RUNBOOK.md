@@ -12,13 +12,15 @@ The Google Sheet is the visible record. Cost: Rp 0 (free-tier pieces only).
 | **Bot** | reads your messages, decides the verdict, replies, writes the Sheet | the VM: `/home/ubuntu/shopeefood-tracker/bot/bot.mjs` |
 | **VM** | the rented room the bot lives in | Freestyle, id `vm-4e5fb8f51dbc4dd3a43b2cc2f23c7309`, slug `shopee` |
 | **Sheet** | your ledger: tabs `customers` + `orders` | Google Sheet `SHOPEE_CUSTOMER`, script `SHEET-SCRIPT.js` |
-| **Ear** | the doorbell: wakes the VM per message (Phase 6) | Netlify function `netlify-ear/netlify/functions/ear.mjs` |
-| **Supervisor** | restarts the brain after a crash or reboot | systemd unit `shopee-brain` on the VM |
+| **Ear** | the doorbell: wakes the VM per message | Netlify function at `https://shopeefood-ear.netlify.app/.netlify/functions/ear` (**live**) |
+| **Supervisor** | restarts the brain after a crash or reboot | systemd unit `shopee-brain` on the VM — **parked** while the ear runs (`switch` disables it; `rollback` brings it back) |
+| **Auto-deploy** | pushes to GitHub redeploy the ear | GitHub Actions workflow `.github/workflows/deploy-ear.yml` |
 | **Local project** | source of truth for code + docs | `C:\VSCODE\LTX-QUASAR\SHOPEE\` |
 
 Secrets (files only, never typed into chat): `VPS-KEY.txt` (VM API key),
 `BOT-KEY.txt` (Telegram bot token), `SHEET-TOKEN.txt`, `SHEET-URL.txt`,
-`WEBHOOK-SECRET.txt` (Telegram↔Netlify shared secret), `NETLIFY-TOKEN.txt`.
+`WEBHOOK-SECRET.txt` (Telegram↔Netlify shared secret), `NETLIFY_PERSONAL_ACCESS_TOKEN.txt`,
+`GITHUB-PAT.txt`.
 
 ---
 
@@ -34,12 +36,19 @@ Secrets (files only, never typed into chat): `VPS-KEY.txt` (VM API key),
 
 ## 3. Health check (one command, from `C:\VSCODE\LTX-QUASAR\SHOPEE\spike`)
 
+**Ear mode (current):**
+```
+node cmd.mjs tail -5 /home/ubuntu/shopeefood-tracker/logs/bot.log
+```
+Expected: a recent `reply ...` line after each paste. The unit *should* read `inactive` /
+`disabled` — in ear mode the brain only exists while a message wakes it.
+Webhook health (from `SHOPEE\`): `getWebhookInfo` must show `pending: 0` and `last_error: none`.
+
+**Polling mode (only after `rollback`):**
 ```
 node cmd.mjs systemctl is-active shopee-brain
-node cmd.mjs tail -5 /home/ubuntu/shopeefood-tracker/logs/bot.log
 node peek.mjs
 ```
-
 Expected: `active`, a recent `brain started` or `reply ...` line, and the process
 shown in `ps` with parent PID 1 (systemd owns it).
 
@@ -80,17 +89,18 @@ node cmd.mjs tail -f /home/ubuntu/shopeefood-tracker/logs/bot.log
 
 ## 5. The two modes
 
-**Polling** (current default): the brain sits waiting, asking Telegram every 30 s.
-Simple, but it burns the free quota (~4 vCPU-h per hour it runs) and can go silent.
-
-**Ear / doorbell** (production target): the VM sleeps; your message rings the ear
+**Ear / doorbell (current):** the VM sleeps; your message rings the ear
 on Netlify, which wakes the VM, hands over the message, and the bot answers.
 A message costs a few seconds of VM time instead of an hour of idling.
+**Live since Oct 13 (turn 40):** webhook → ear, unit disabled, quota stopped bleeding.
 
-Switch to the ear:
+**Polling (rollback only):** the brain sits waiting, asking Telegram every 30 s.
+Simple, but it burns the free quota (~4 vCPU-h per hour it runs) and can go silent.
+
+Switch (already done — here for the record):
 ```
 cd C:\VSCODE\LTX-QUASAR\SHOPEE\spike
-node netlify-ear.mjs env <site-url>      # once: put the secrets on the Netlify site
+node netlify-ear.mjs env <site-url>      # put the secrets on the Netlify site
 node netlify-ear.mjs switch <site-url>   # point Telegram at the ear, stop polling
 ```
 Verify with one real paste. Rollback any time:
@@ -103,6 +113,10 @@ Rules when switching:
 - The bot in `--once` mode never touches `getUpdates` or the webhook — the webhook *is* the queue.
 - Telegram retries a failed delivery for up to 24 h; the bot marks each update id as
   handled only after success, so a retry never double-books an order.
+
+**Updating the ear:** change files under `netlify-ear\`, push to `main` → GitHub Actions
+deploys automatically (~40 s, workflow `deploy-ear.yml`). The Netlify site env vars
+(`FREESTYLE_API_KEY`, `TELEGRAM_SECRET`) live on the site itself — pushes never touch them.
 
 ---
 
@@ -126,10 +140,12 @@ SHOPEE\
   discussion-notes.md        every turn, with evidence
   RUNBOOK.md                 this file
   SHEET-SCRIPT.js            what you paste into the Sheet (Apps Script)
+  .github\workflows\
+    deploy-ear.yml           push to main → deploys the ear to Netlify (~40 s)
   shopeefood-tracker\
     bot\bot.mjs              the bot (deployed to the VM)
     tests\bot.test.mjs       the local test harness
-  netlify-ear\               the doorbell site (drag-and-drop deploy)
+  netlify-ear\               the doorbell site (deployed by GitHub Actions on push)
     index.html
     netlify\functions\ear.mjs
   spike\                     operator tools
@@ -140,7 +156,8 @@ SHOPEE\
     netlify-ear.mjs          env / switch / rollback for the ear
     audit.mjs                full read-only VM audit
     pause-test.mjs           does polling hold the VM awake?
-  {VPS-KEY,BOT-KEY,SHEET-TOKEN,SHEET-URL,WEBHOOK-SECRET,NETLIFY-TOKEN}.txt
+  {VPS-KEY,BOT-KEY,SHEET-TOKEN,SHEET-URL,WEBHOOK-SECRET,NETLIFY_PERSONAL_ACCESS_TOKEN,GITHUB-PAT}.txt
+  .netlify-site-id.txt       the Netlify site id (used by the deploy tooling)
 ```
 
 ---
