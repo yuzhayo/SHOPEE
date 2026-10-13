@@ -8,12 +8,16 @@
 // WEBHOOK-SECRET.txt (generated here once, shared with Telegram + Netlify).
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SHOPEE_ROOT = join(__dirname, "..");
 
-process.env.FREESTYLE_API_KEY = readFileSync("../VPS-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
+process.env.FREESTYLE_API_KEY = readFileSync(join(SHOPEE_ROOT, "VPS-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
 const { Freestyle } = await import("freestyle");
 const vm = new Freestyle().vms.ref("vm-4e5fb8f51dbc4dd3a43b2cc2f23c7309");
 
-const TOKEN = readFileSync("../BOT-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
+const TOKEN = readFileSync(join(SHOPEE_ROOT, "BOT-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
 const TG = `https://api.telegram.org/bot${TOKEN}`;
 const ROOT = "/home/ubuntu/shopeefood-tracker";
 
@@ -37,7 +41,7 @@ async function sh(command) {
 
 // ---- the shared webhook secret: one value, two homes (Telegram + Netlify) ----
 function webhookSecret() {
-  const f = "../WEBHOOK-SECRET.txt";
+  const f = join(SHOPEE_ROOT, "WEBHOOK-SECRET.txt");
   if (existsSync(f)) return readFileSync(f, "utf8").split(/\r?\n/)[0].trim();
   const s = randomBytes(24).toString("hex");
   writeFileSync(f, s + "\n");
@@ -45,9 +49,9 @@ function webhookSecret() {
 }
 
 if (mode === "env" && arg) {
-  const netlifyToken = readFileSync("../NETLIFY-TOKEN.txt", "utf8").split(/\r?\n/)[0].trim();
+  const netlifyToken = readFileSync(join(SHOPEE_ROOT, "NETLIFY-TOKEN.txt"), "utf8").split(/\r?\n/)[0].trim();
   const secret = webhookSecret();
-  const apiKey = readFileSync("../VPS-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
+  const apiKey = readFileSync(join(SHOPEE_ROOT, "VPS-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
 
   const api = async (path, init = {}) => {
     const r = await fetch(`https://api.netlify.com/api/v1${path}`, {
