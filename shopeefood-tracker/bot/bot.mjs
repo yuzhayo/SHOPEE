@@ -729,6 +729,21 @@ async function handleToday(chatId) {
     : `📊 today · ${day}\nno orders yet.`);
 }
 
+async function handleAll(chatId) {
+  let orders = 0, bp = 0, bo = 0, nw = 0, rt = 0;
+  for (const rec of customers.values()) {
+    if (rec.banned) bp++; // people currently banned
+    for (const e of rec.events) {
+      orders++;
+      if (e.verdict === "banned") bo++;
+      else if (e.verdict === "new") nw++;
+      else rt++;
+    }
+  }
+  await send(chatId,
+    `📊 all-time totals · ${customers.size} unique customers\norders: ${orders} · new: ${nw} · returning: ${rt} · banned orders: ${bo}\nbanned people: ${bp}`);
+}
+
 async function handleFind(chatId, text) {
   const q = argAfter("find", text).trim().toLowerCase();
   if (!q) { await send(chatId, "usage: /find <driver or customer name>"); return; }
@@ -799,7 +814,7 @@ async function handleUpdate(u) {
       chatId,
       "ShopeeFood tracker.\n" +
         "number = check · number + screenshot = record order · screenshot alone = lookup\n\n" +
-        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status\n/today\n/find <name>\n/delete <orderID>\n/update (then send the screenshot)\n/cancel\n/flag driver <#no or name>"
+        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status\n/today\n/all\n/find <name>\n/delete <orderID>\n/update (then send the screenshot)\n/cancel\n/flag driver <#no or name>"
     );
     return;
   }
@@ -840,6 +855,7 @@ async function handleUpdate(u) {
     return;
   }
   if (/^\/today\b/.test(text)) return handleToday(chatId);
+  if (/^\/all\b/.test(text)) return handleAll(chatId);
   if (/^\/find\b/.test(text)) return handleFind(chatId, text);
   if (/^\/flag\b/.test(text)) return handleFlag(chatId, text);
   if (/^\/unflag\b/.test(text)) return handleUnflag(chatId, text);
