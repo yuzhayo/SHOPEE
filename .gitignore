@@ -1,0 +1,27 @@
+# ---- secrets: never committed, never in history ----
+/VPS-KEY.txt
+/BOT-KEY.txt
+/SHEET-TOKEN.txt
+/SHEET-URL.txt
+/WEBHOOK-SECRET.txt
+/NETLIFY-TOKEN.txt
+*-KEY.txt
+*-TOKEN.txt
+*SECRET*.txt
+*.key
+*.pem
+
+# ---- generated output and customer data ----
+/AUDIT-live.txt
+*.zip
+notebook/
+screenshots/
+logs/
+history.tsv
+customers.json
+
+# ---- dependencies and build junk ----
+node_modules/
+Thumbs.db
+desktop.ini
+.DS_Store

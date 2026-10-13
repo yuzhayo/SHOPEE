@@ -1,0 +1,47 @@
+// Full read-only audit of the tracker VM: files, store, logs, quota, Sheet reachability.
+// Writes nothing on the VM (no state change). Secrets: only sizes/perms are printed.
+import { readFileSync } from "node:fs";
+
+process.env.FREESTYLE_API_KEY = readFileSync("../VPS-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
+const { Freestyle } = await import("freestyle");
+const f = new Freestyle();
+const vm = f.vms.ref("vm-4e5fb8f51dbc4dd3a43b2cc2f23c7309");
+const ROOT = "/home/ubuntu/shopeefood-tracker";
+
+const run = async (label, command, limit = 4000) => {
+  const r = await vm.exec({ command, timeoutMs: 30000 });
+  const out = (r.stdout || "") + (r.stderr ? `\n[stderr] ${r.stderr}` : "");
+  console.log(`\n===== ${label} (exit ${r.statusCode}) =====`);
+  console.log(out.length > limit ? out.slice(0, limit) + `\n…[truncated ${out.length - limit} chars]` : out);
+};
+
+const d = await vm.data().catch((e) => ({ error: e.message }));
+console.log("===== vm.data =====");
+console.log(
+  JSON.stringify(
+    {
+      state: d.state,
+      idleTimeoutSeconds: d.idleTimeoutSeconds,
+      automaticRestart: d.automaticRestart,
+      autoDeleteSeconds: d.autoDeleteSeconds,
+      totalRunSeconds: d.totalRunSeconds,
+      lastNetworkActivity: d.lastNetworkActivity,
+    },
+    null,
+    1
+  )
+);
+
+await run("tree + perms", `ls -la ${ROOT} ${ROOT}/bot ${ROOT}/config ${ROOT}/notebook ${ROOT}/logs`);
+await run("disk", `df -h / | tail -1; du -sh ${ROOT} ${ROOT}/notebook/screenshots 2>/dev/null`);
+await run("package versions", `node --version; tesseract --version 2>&1 | head -1; uptime`);
+await run("process", `ps -eo pid,etime,rss,args | grep -E 'node bot/bot\\.mjs|tesseract' | grep -v grep`);
+await run("which bot.mjs runs", `md5sum ${ROOT}/bot/bot.mjs; ls -la ${ROOT}/bot/bot.mjs; head -c 200 ${ROOT}/notebook/offset.txt`);
+await run("log tail 40", `tail -40 ${ROOT}/logs/bot.log`, 6000);
+await run("log error scan", `grep -cE 'failed|exception|error|unexpected' ${ROOT}/logs/bot.log; grep -E 'failed|exception|error|unexpected' ${ROOT}/logs/bot.log | tail -12`);
+await run("store", `cat ${ROOT}/notebook/customers.json`, 3000);
+await run("history.tsv", `cat ${ROOT}/notebook/history.tsv`, 3000);
+await run("notebook extras", `ls -la ${ROOT}/notebook; ls -la ${ROOT}/notebook/screenshots/* 2>/dev/null | head -20`);
+await run("nohup", `cat ${ROOT}/logs/nohup.out | tail -20`);
+await run("config sizes only", `for x in ${ROOT}/config/*; do echo "$x $(wc -c < "$x") bytes $(stat -c %a "$x")"; done`);
+await run("sheet reachable from VM?", `curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$(cat ${ROOT}/config/sheet-url.txt)" ; echo`);

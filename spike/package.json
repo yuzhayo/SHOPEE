@@ -1,0 +1,8 @@
+{
+  "name": "shopee-wake-spike",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "freestyle": "latest"
+  }
+}
