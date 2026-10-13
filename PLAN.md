@@ -288,3 +288,6 @@ green on new code. Left: his Sheet v3.2 re-paste + real pastes.**
 
 **Update (turn 51) — /delete + /update live. His taps: (1) Sheet v3.3 re-paste
 (tombstones need it; /update works without), (2) try both commands on a test row.**
+
+**Update (turn 55) — /today + repeat-offender line + /find + /flag live. No DM lock,
+no backups (his calls). Guided /update still parked.**

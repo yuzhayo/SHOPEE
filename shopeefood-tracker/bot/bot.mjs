@@ -116,6 +116,38 @@ function saveDeletes() {
   renameSync(tmp, DEL_FILE);
 }
 
+// ---- flagged drivers (/flag): names scored in caps, VM-local file (not synced to
+// the Sheet — the Sheet stays the order ledger; flags are bot-side config).
+const FLAG_FILE = `${ROOT}/notebook/flagged-drivers.json`;
+let flagged = {};
+try {
+  const f = JSON.parse(readFileSync(FLAG_FILE, "utf8"));
+  if (f && typeof f === "object") flagged = f;
+} catch {
+  // none flagged
+}
+function saveFlags() {
+  const tmp = FLAG_FILE + ".tmp";
+  writeFileSync(tmp, JSON.stringify(flagged, null, 1));
+  renameSync(tmp, FLAG_FILE);
+}
+const flagKey = (s) => (s || "").trim().toUpperCase();
+function flaggedLine(driver) {
+  if (!driver) return "";
+  const f = flagged[flagKey(driver)];
+  return f ? `\n⚠️ driver ${driver} is flagged: ${f.reason || "no reason given"}` : "";
+}
+function matchedDriver(rec, ocr) {
+  if (!rec || !ocr || (!ocr.id && !ocr.no)) return "";
+  const ev = ocr.id ? rec.events.find((e) => e.id === ocr.id) : rec.events.find((e) => e.no === ocr.no);
+  return ev ? ev.driver || "" : "";
+}
+const ord = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
+function repeatLine(rec) {
+  const n = rec.events.filter((e) => e.verdict === "banned").length;
+  return n >= 2 ? `\n${ord(n)} order while banned.` : "";
+}
+
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
   appendFileSync(LOG, line + "\n");
@@ -287,7 +319,8 @@ function buildReply(phone, rec, { kind, newEvent, owner, ocr, nohint }) {
         `🆕 ${phone} — NEW CUSTOMER\norder logged\n` +
         `order number: #${newEvent.no}\norder ID: ${newEvent.id}` +
         (newEvent.driver ? `\ndriver: ${newEvent.driver}` : "") +
-        (newEvent.customer ? `\ncustomer: ${newEvent.customer}` : "")
+        (newEvent.customer ? `\ncustomer: ${newEvent.customer}` : "") +
+        flaggedLine(newEvent.driver)
       );
     case "returning": // T2
       return (
@@ -295,10 +328,12 @@ function buildReply(phone, rec, { kind, newEvent, owner, ocr, nohint }) {
         `order: #${newEvent.no}\norder ID: ${newEvent.id}` +
         (newEvent.driver ? `\ndriver: ${newEvent.driver}` : "") +
         (newEvent.customer ? `\ncustomer: ${newEvent.customer}` : "") +
+        flaggedLine(newEvent.driver) +
         histBlock
       );
     case "dup": // T3 — keys match this customer's own record
-      return `✅ ${phone} — CHECKING\norder already recorded\norder: #${ocr.no}\norder ID: ${ocr.id}${histBlock}`;
+      return `✅ ${phone} — CHECKING\norder already recorded\norder: #${ocr.no}\norder ID: ${ocr.id}` +
+        flaggedLine(matchedDriver(rec, ocr)) + histBlock;
     case "wrong-owner": // T4 — keys belong to another number
       return (
         `⚠️ ${phone} — CHECKING\n` +
@@ -328,14 +363,16 @@ function buildReply(phone, rec, { kind, newEvent, owner, ocr, nohint }) {
       return `⚠️ NO DATA — ${keys}not in database.` +
         (nohint ? "" : "\nto make a new record send NUMBER + SCREENSHOT.");
     }
-    case "banned-order": { // T11 — banned, new order still logged
+    case "banned-order": { // T11 — banned, new order still logged (+ history + repeat count)
       const ev = newEvent ? `\norder logged\norder: #${newEvent.no}\norder ID: ${newEvent.id}` +
         (newEvent.driver ? `\ndriver: ${newEvent.driver}` : "") +
         (newEvent.customer ? `\ncustomer: ${newEvent.customer}` : "") : "";
-      return `⛔ ${phone} — BANNED\nreason: ${rec.banReason || "no reason given"}\ncancel this order yourself.${ev}${histBlock}`;
+      return `⛔ ${phone} — BANNED\nreason: ${rec.banReason || "no reason given"}\ncancel this order yourself.${ev}` +
+        flaggedLine(newEvent && newEvent.driver) + histBlock + repeatLine(rec);
     }
-    case "banned-check": // T12 — banned, lookup only
-      return `⛔ ${phone} — BANNED\nreason: ${rec.banReason || "no reason given"}\ncancel this order yourself.${histBlock}`;
+    case "banned-check": // T12 — banned, lookup only (+ history + repeat count)
+      return `⛔ ${phone} — BANNED\nreason: ${rec.banReason || "no reason given"}\ncancel this order yourself.` +
+        (ocr ? flaggedLine(matchedDriver(rec, ocr)) : "") + histBlock + repeatLine(rec);
     default:
       return `🔍 ${phone} — NO RECORD\nnot in database.`;
   }
@@ -669,6 +706,77 @@ async function handleUpdateCmd(chatId, text) {
   await sheetPush();
 }
 
+async function handleToday(chatId) {
+  const day = dWIB(Date.now()).toISOString().slice(0, 10);
+  let n = 0, nw = 0, rt = 0, bn = 0;
+  for (const rec of customers.values())
+    for (const e of rec.events) {
+      if (!e.ts || dWIB(e.ts).toISOString().slice(0, 10) !== day) continue;
+      n++;
+      if (e.verdict === "new") nw++;
+      else if (e.verdict === "banned") bn++;
+      else rt++;
+    }
+  await send(chatId, n ? `📊 today · ${day}\norders: ${n} · new: ${nw} · returning: ${rt} · banned: ${bn}`
+    : `📊 today · ${day}\nno orders yet.`);
+}
+
+async function handleFind(chatId, text) {
+  const q = argAfter("find", text).trim().toLowerCase();
+  if (!q) { await send(chatId, "usage: /find <driver or customer name>"); return; }
+  const hits = [];
+  for (const [phone, rec] of customers)
+    for (const e of rec.events) {
+      if ((e.driver || "").toLowerCase().includes(q) || (e.customer || "").toLowerCase().includes(q))
+        hits.push(`#${e.no} · ${e.id} · ${phone} · ${e.driver || "?"} / ${e.customer || "?"}`);
+    }
+  if (!hits.length) { await send(chatId, `🔍 no matches for "${q}".`); return; }
+  const shown = hits.slice(0, 10);
+  await send(chatId, `🔍 matches for "${q}": ${hits.length}\n${shown.join("\n")}` +
+    (hits.length > 10 ? `\n…and ${hits.length - 10} more` : ""));
+}
+
+const FLAG_USAGE = "usage:\n/flag driver #<order number> [reason]\n/flag driver <driver name>";
+
+async function flagDriver(chatId, name, reason) {
+  const key = flagKey(name);
+  if (!key) { await send(chatId, FLAG_USAGE); return; }
+  if (flagged[key]) { await send(chatId, `⚠️ driver ${key} already flagged: ${flagged[key].reason || "no reason given"}`); return; }
+  flagged[key] = { reason: reason || "", date: Date.now() };
+  saveFlags();
+  log(`flag driver ${key} (${reason || "no reason"}) (chat ${chatId})`);
+  await send(chatId, `⚠️ driver ${key} — FLAGGED${reason ? `\nreason: ${reason}` : ""}`);
+}
+
+async function handleFlag(chatId, text) {
+  const rest = argAfter("flag", text).trim().replace(/^driver\b/i, "").trim();
+  if (!rest) { await send(chatId, FLAG_USAGE); return; }
+  const nom = rest.match(/#(\d{1,7})\b/);
+  if (!nom) return flagDriver(chatId, rest, ""); // whole remainder = the name
+  const owners = [];
+  for (const [phone, rec] of customers)
+    for (const e of rec.events) if (e.no === nom[1]) owners.push({ phone, ev: e });
+  if (!owners.length) { await send(chatId, `🔍 NO DATA — order #${nom[1]} not in database.`); return; }
+  if (owners.length > 1) {
+    await send(chatId, `⚠️ #${nom[1]} belongs to ${owners.length} numbers:\n` +
+      owners.map((o) => `${o.phone} · ${o.ev.driver || "driver unknown"}`).join("\n") +
+      `\nflag by driver name instead.`);
+    return;
+  }
+  if (!owners[0].ev.driver) { await send(chatId, `⚠️ order #${nom[1]} has no driver recorded — flag by driver name instead.`); return; }
+  return flagDriver(chatId, owners[0].ev.driver, rest.replace(/#\d{1,7}\b/, "").trim());
+}
+
+async function handleUnflag(chatId, text) {
+  const key = flagKey(argAfter("unflag", text).replace(/^driver\b/i, ""));
+  if (!key) { await send(chatId, "usage: /unflag driver <name>"); return; }
+  if (!flagged[key]) { await send(chatId, `${key} — not flagged (nothing to undo)`); return; }
+  delete flagged[key];
+  saveFlags();
+  log(`unflag driver ${key} (chat ${chatId})`);
+  await send(chatId, `✅ driver ${key} unflagged.`);
+}
+
 // ---- update handling ----
 async function handleUpdate(u) {
   const msg = u.message ?? u.channel_post;
@@ -683,7 +791,7 @@ async function handleUpdate(u) {
       chatId,
       "ShopeeFood tracker.\n" +
         "number = check · number + screenshot = record order · screenshot alone = lookup\n\n" +
-        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status\n/delete <orderID>\n/update <orderID> driver|customer <name>"
+        "commands:\n/ban <number> <reason>\n/unban <number>\n/who <number>\n/status\n/today\n/find <name>\n/delete <orderID>\n/update <orderID> driver|customer <name>\n/flag driver <#no or name>"
     );
     return;
   }
@@ -700,6 +808,10 @@ async function handleUpdate(u) {
   if (/^\/who\b/.test(text)) return handleWho(chatId, text);
   if (/^\/delete\b/.test(text)) return handleDelete(chatId, text);
   if (/^\/update\b/.test(text)) return handleUpdateCmd(chatId, text);
+  if (/^\/today\b/.test(text)) return handleToday(chatId);
+  if (/^\/find\b/.test(text)) return handleFind(chatId, text);
+  if (/^\/flag\b/.test(text)) return handleFlag(chatId, text);
+  if (/^\/unflag\b/.test(text)) return handleUnflag(chatId, text);
   if (text.startsWith("/")) return;
 
   const nowIso = new Date().toISOString();
@@ -778,7 +890,7 @@ async function handleUpdate(u) {
   if (dup) {
     const filled = backfill(rec, ocr);
     if (filled.length) log(`backfill ${phone} #${ocr.no}: ${filled.join(", ")}`);
-    if (rec.banned) return done("check-dup", "banned", buildReply(phone, rec, { kind: "banned-check" }), rec);
+    if (rec.banned) return done("check-dup", "banned", buildReply(phone, rec, { kind: "banned-check", ocr }), rec);
     else return done("check-dup", "checking", buildReply(phone, rec, { kind: "dup", ocr }), rec);
   }
 

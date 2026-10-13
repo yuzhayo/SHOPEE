@@ -544,6 +544,129 @@ console.log("S22 refusals: unknown target, bad field");
   check("bad delete shows usage", lastReply().includes("/delete <orderID>"), lastReply().replace(/\n/g, " | "));
 }
 
+console.log("S23 /today counts this WIB day only");
+{
+  const root = sandbox("s23");
+  sheetRows = []; sent.length = 0;
+  const now = Date.now(), old = now - 3 * 86400e3;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: old, last: now, banned: false, banReason: "", banDate: 0,
+      events: [
+        { no: "530", id: "3300155108395520491", driver: "A", customer: "B", ts: now, shot: "a.jpg", chat: 555, verdict: "new" },
+        { no: "531", id: "3301316233709056913", driver: "C", customer: "D", ts: now, shot: "b.jpg", chat: 555, verdict: "returning" },
+        { no: "500", id: "3200000000000000", driver: "E", customer: "F", ts: old, shot: "c.jpg", chat: 555, verdict: "new" },
+      ],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/today"));
+  check("2 today, old one excluded", lastReply().includes("orders: 2 · new: 1 · returning: 1 · banned: 0"), lastReply().replace(/\n/g, " | "));
+}
+
+console.log("S24 repeat-offender line appears from the 2nd banned order");
+{
+  const root = sandbox("s24");
+  sheetRows = []; sent.length = 0;
+  const mk = (n, v2) => ({
+    first: 1791804480000, last: 1791804480000, banned: true, banReason: "fake", banDate: 1791804480000,
+    events: [
+      { no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "banned" },
+      ...(n > 1 ? [{ no: "531", id: v2, driver: "", customer: "", ts: 1791804490000, shot: "b.jpg", chat: 555, verdict: "banned" }] : []),
+    ],
+    pushedStatus: "banned", pushedReason: "fake",
+  });
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289696969696": mk(2, "3301316233709056913"),
+    "6289797979797": mk(1),
+  }));
+  await runOnce(root, textUpdate("089696969696"));
+  check("2nd shows the counter", lastReply().includes("2nd order while banned."), lastReply().replace(/\n/g, " | "));
+  sent.length = 0;
+  await runOnce(root, textUpdate("089797979797"));
+  check("1st stays quiet", !lastReply().includes("order while banned"), lastReply().replace(/\n/g, " | "));
+}
+
+console.log("S25 /find searches driver + customer names");
+{
+  const root = sandbox("s25");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "RAHMAT FADLI", customer: "Nadya", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/find rahmat"));
+  check("driver hit shows order + owner", lastReply().includes("#530 · 3300155108395520491 · 6289595959595"), lastReply().replace(/\n/g, " | "));
+  sent.length = 0;
+  await runOnce(root, textUpdate("/find NADYA"));
+  check("case-insensitive customer hit", lastReply().includes("#530 ·"), lastReply().replace(/\n/g, " | "));
+  sent.length = 0;
+  await runOnce(root, textUpdate("/find zzznope"));
+  check("clean miss", lastReply() === '🔍 no matches for "zzznope".', lastReply());
+}
+
+console.log("S26 /flag by name and by #number, warning fires on next order");
+{
+  const root = sandbox("s26");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "BUDI SANTOSO", customer: "Siti", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/flag driver RAHMAT FADLI"));
+  check("name form flags exact", lastReply() === "⚠️ driver RAHMAT FADLI — FLAGGED", lastReply());
+  sent.length = 0;
+  await runOnce(root, textUpdate("/flag driver #530 pipe burst"));
+  check("#number form flags that order's driver + reason", lastReply() === "⚠️ driver BUDI SANTOSO — FLAGGED\nreason: pipe burst", lastReply().replace(/\n/g, " | "));
+  const flags = JSON.parse(readFileSync(join(root, "notebook", "flagged-drivers.json"), "utf8"));
+  check("flag file holds both", !!flags["RAHMAT FADLI"] && !!flags["BUDI SANTOSO"]);
+  console.log("S26b flagged driver triggers the warning on a fresh order");
+  const root2 = sandbox("s26b");
+  sheetRows = []; sent.length = 0;
+  await runOnce(root2, textUpdate("/flag driver RAHMAT FADLI"));
+  sent.length = 0;
+  await runOnce(root2, shotUpdate("080000000002")); // default OCR driver = RAHMAT FADLI
+  check("T1 carries the flag warning", lastReply().includes("⚠️ driver RAHMAT FADLI is flagged: no reason given"), lastReply().replace(/\n/g, " | "));
+}
+
+console.log("S27 /flag refusals + /unflag");
+{
+  const root = sandbox("s27");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "a.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+    "6289696969696": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "9999999999999999", driver: "OTHER DRIVER", customer: "Z", ts: 1791804480000, shot: "b.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, textUpdate("/flag driver #530"));
+  check("shared #number lists owners, flags nothing", lastReply().includes("belongs to 2 numbers") && lastReply().includes("flag by driver name instead"), lastReply().replace(/\n/g, " | "));
+  sent.length = 0;
+  await runOnce(root, textUpdate("/flag driver #999"));
+  check("unknown #number refuses", lastReply() === "🔍 NO DATA — order #999 not in database.", lastReply());
+  sent.length = 0;
+  await runOnce(root, textUpdate("/flag driver #530"));
+  sent.length = 0;
+  await runOnce(root, textUpdate("/unflag driver NOBODY"));
+  check("unflag miss is plain", lastReply() === "NOBODY — not flagged (nothing to undo)", lastReply());
+  sent.length = 0;
+  await runOnce(root, textUpdate("/flag driver Speedy"));
+  await runOnce(root, textUpdate("/unflag driver speedy"));
+  check("unflag hit (case-insensitive)", lastReply() === "✅ driver SPEEDY unflagged.", lastReply());
+}
+
 server.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

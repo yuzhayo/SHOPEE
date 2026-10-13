@@ -34,6 +34,9 @@ Secrets (files only, never typed into chat): `VPS-KEY.txt` (VM API key),
 - **Fix a wrong name**: `/update 33013...0713 driver RAHMAT FADLI` — or `/update 0857xxxx #531 customer Siti`. Only driver/customer can be corrected (counts, dates and verdicts stay computed).
 - **Remove an order**: `/delete 33013...0713` — or `/delete 0857xxxx #531`. Gone locally and off the Sheet.
 - **Remove a customer**: `/delete 0857xxxx` — number and all its orders, both places.
+- **Today's tally**: `/today` — order count, new vs returning vs banned.
+- **Search by name**: `/find rahmat` — orders by driver or customer name.
+- **Flag a driver**: `/flag driver #531 [reason]` — or `/flag driver RAHMAT FADLI`. Flagged drivers get a warning line on every order reply. Undo: `/unflag driver RAHMAT FADLI`.
 - If the bot ever seems quiet: send `/status` (polling mode) or just paste again (ear mode).
 
 ---

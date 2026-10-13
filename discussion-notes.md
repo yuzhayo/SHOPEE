@@ -1051,3 +1051,48 @@ otherwise; old script = local delete stands, Sheet row lingers + log tells why).
 Replies T14/T15/T16 in his caps style; /start lists the new commands. Guards: exact
 match only, typo'd refs land on usage/NO DATA, every deletion logged with counts.
 RUNBOOK daily-use + v3.3 note updated.
+
+**Turn 51 outcome — v42 live.** Run 38377925273 success, VM 36,438 B = local,
+/delete + /update present. His taps: (1) Sheet v3.3 re-paste (only needed for Sheet-side
+row removal; /update + local deletes work without it), (2) try /update + /delete.
+
+---
+
+**Turn 52 — /update REDESIGNED by Jack (EXPLAIN ONLY, waiting for "go").**
+
+His correction: "/update is like after i launch /update then it tell me to send ss and
+number to fill which fields cell empty or incorrect, order number must match."
+So: guided two-step flow, NOT my typed "/update <id> driver <name>" form (to be removed).
+Design presented: bare /update arms a 10-min pending-update per chat → next
+screenshot+number is treated as fill material → order number must match a recorded
+order (else NO DATA refusal, mode stays) → blanks filled AND wrong values corrected
+from the screenshot (this is the difference vs auto-backfill which is blanks-only) →
+UPDATED reply (old → new per field) or "already complete". Wrong-number paste → T4
+as today. Unreadable → T7, mode stays till expiry. No code touched.
+
+**Turn 53 — Jack added a stop button to the pending /update design (still awaiting "go").**
+`/cancel`: clears this chat''s armed update mode → "update cancelled — back to normal";
+nothing armed → "nothing to cancel". Auto-off paths unchanged (one screenshot consumed,
+10-min expiry). No code touched.
+
+**Turn 54 — Jack asked for nice-to-haves (no overengineering). Proposed 5, building none yet:**
+1. DM-only destructive commands (/ban /delete /update /cancel) — anyone in the 5-member
+   group can fire them today. 2. /today — today''s order count, new vs returning.
+3. Repeat-banned counter on banned replies ("3rd order while banned"). 4. /find <name> —
+   search orders by driver/customer name. 5. Daily DB backups on the VM (7 copies).
+   Awaiting his pick (one, several, or none).
+
+---
+
+**Turn 55 — /today + repeat counter + /find + /flag BUILT + SHIPPED (108/108).**
+
+Jack''s picks: DM-lock REJECTED (his alts need equal power — group stays fully
+empowered, his call), backups REJECTED (Sheet is the backup). Built:
+- /today: WIB-day event count (new/returning/banned split).
+- Repeat line on T11/T12 from 2nd banned order ("2nd order while banned", ordinalised).
+- /find <name>: case-insensitive driver/customer search, top 10 + overflow count.
+- /flag driver <#no [reason] | name> (name form = whole remainder, reasons only via
+  #no; shared #no lists owners and flags nothing; blank driver directs to name form)
+  + /unflag. Flag warning line on T1/T2/T3/T11/T12 when that order''s driver is flagged.
+  Flags VM-local (flagged-drivers.json), NOT Sheet-synced. T1 exact test untouched
+  (warning only fires when flagged). Guided /update + /cancel still parked awaiting go.
