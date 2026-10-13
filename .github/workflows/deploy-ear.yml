@@ -7,13 +7,21 @@ on:
       - "netlify-ear/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-ear
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b512caab2d2b6a7a5ea486e8c0b398 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4ea3a36737 # v4.1.0
         with:
           node-version: "22"
 

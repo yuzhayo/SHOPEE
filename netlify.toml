@@ -4,3 +4,9 @@
 [functions]
   directory = "netlify-ear/netlify/functions"
   node_bundler = "esbuild"
+  included_files = ["!**/*.txt"]
+
+# P1: Must be >= EXEC_TIMEOUT_MS in ear.mjs
+# Free: 10, Pro: 26
+[functions.ear]
+  timeout = 26

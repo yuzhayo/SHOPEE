@@ -449,7 +449,7 @@ async function send(chatId, text, attempt = 0) {
 async function sheetPull() {
   if (!SHEET_URL || !SHEET_TOKEN) return false;
   try {
-    const g = await fetch(`${SHEET_URL}?token=${encodeURIComponent(SHEET_TOKEN)}`);
+    const g = await fetch(`${SHEET_URL}?token=${encodeURIComponent(SHEET_TOKEN)}`, { signal: AbortSignal.timeout(8000) });
     const txt = await g.text();
     if (!txt.trim().startsWith("{")) {
       log(`sheet pull unavailable: ${txt.trim().slice(0, 60)}`);
@@ -528,6 +528,7 @@ async function sheetPush() {
       method: "POST",
       headers: { "content-type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ token: SHEET_TOKEN, rows, log: logRows, delete: pendingDeletes.map(({ attempts, ...t }) => t) }),
+      signal: AbortSignal.timeout(8000),
     });
     const txt = await res.text();
     const ok = txt.trim().startsWith("ok");

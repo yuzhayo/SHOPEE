@@ -7,9 +7,18 @@ on:
       - "shopeefood-tracker/bot/bot.mjs"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-bot
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Ship bot.mjs onto the VM (pulls from this repo, syntax-gated)
         run: |
