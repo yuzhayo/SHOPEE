@@ -701,6 +701,35 @@ console.log("S23 /today counts this WIB day only");
   check("2 today, old one excluded", lastReply().includes("orders: 2 · new: 1 · returning: 1 · banned: 0"), lastReply().replace(/\n/g, " | "));
 }
 
+console.log("S23b /all shows all-time totals incl unique + banned people");
+{
+  const root = sandbox("s23b");
+  sheetRows = []; sent.length = 0;
+  const now = Date.now(), old = now - 3 * 86400e3;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: old, last: now, banned: false, banReason: "", banDate: 0,
+      events: [
+        { no: "530", id: "3300155108395520491", driver: "A", customer: "B", ts: now, shot: "a.jpg", chat: 555, verdict: "new" },
+        { no: "531", id: "3301316233709056913", driver: "C", customer: "D", ts: old, shot: "b.jpg", chat: 555, verdict: "returning" },
+        { no: "500", id: "3200000000000000", driver: "E", customer: "F", ts: old, shot: "c.jpg", chat: 555, verdict: "returning" },
+      ],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+    "6281229654474": {
+      first: old, last: now, banned: true, banReason: "fake", banDate: old,
+      events: [{ no: "600", id: "3301555555555555", driver: "G", customer: "H", ts: old, shot: "d.jpg", chat: 555, verdict: "banned" }],
+      pushedStatus: "banned", pushedReason: "fake",
+    },
+  }));
+  await runOnce(root, textUpdate("/all"));
+  check("all-time totals: 2 unique, 4 orders, 1 banned people, 1 banned order",
+    lastReply().includes("2 unique customers") &&
+    lastReply().includes("orders: 4 · new: 1 · returning: 2 · banned orders: 1") &&
+    lastReply().includes("banned people: 1"),
+    lastReply().replace(/\n/g, " | "));
+}
+
 console.log("S24 repeat-offender line appears from the 2nd banned order");
 {
   const root = sandbox("s24");

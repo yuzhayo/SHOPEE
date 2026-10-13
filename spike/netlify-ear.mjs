@@ -49,7 +49,8 @@ function webhookSecret() {
 }
 
 if (mode === "env" && arg) {
-  const netlifyToken = readFileSync(join(SHOPEE_ROOT, "NETLIFY-TOKEN.txt"), "utf8").split(/\r?\n/)[0].trim();
+  const netlifyTokenPath = existsSync(join(SHOPEE_ROOT, "NETLIFY-TOKEN.txt")) ? join(SHOPEE_ROOT, "NETLIFY-TOKEN.txt") : join(SHOPEE_ROOT, "NETLIFY_PERSONAL_ACCESS_TOKEN.txt");
+  const netlifyToken = readFileSync(netlifyTokenPath, "utf8").split(/\r?\n/)[0].trim();
   const secret = webhookSecret();
   const apiKey = readFileSync(join(SHOPEE_ROOT, "VPS-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
 
