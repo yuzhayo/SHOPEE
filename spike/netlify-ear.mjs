@@ -8,18 +8,18 @@
 // WEBHOOK-SECRET.txt (generated here once, shared with Telegram + Netlify).
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-
-process.env.FREESTYLE_API_KEY = readFileSync("../VPS-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SHOPEE_ROOT = join(__dirname, "..");
+process.env.FREESTYLE_API_KEY = readFileSync(join(SHOPEE_ROOT, "VPS-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
 const { Freestyle } = await import("freestyle");
 const vm = new Freestyle().vms.ref("vm-4e5fb8f51dbc4dd3a43b2cc2f23c7309");
-
-const TOKEN = readFileSync("../BOT-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
+const TOKEN = readFileSync(join(SHOPEE_ROOT, "BOT-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
 const TG = `https://api.telegram.org/bot${TOKEN}`;
 const ROOT = "/home/ubuntu/shopeefood-tracker";
-
 const mode = process.argv[2];
 const arg = process.argv[3];
-
 async function sh(command) {
   let lastErr = "";
   for (let i = 0; i < 3; i++) {
@@ -34,21 +34,18 @@ async function sh(command) {
   }
   throw new Error(`failed after 3 tries: ${lastErr}`);
 }
-
-// ---- the shared webhook secret: one value, two homes (Telegram + Netlify) ----
 function webhookSecret() {
-  const f = "../WEBHOOK-SECRET.txt";
+  const f = join(SHOPEE_ROOT, "WEBHOOK-SECRET.txt");
   if (existsSync(f)) return readFileSync(f, "utf8").split(/\r?\n/)[0].trim();
   const s = randomBytes(24).toString("hex");
   writeFileSync(f, s + "\n");
   return s;
 }
-
 if (mode === "env" && arg) {
-  const netlifyToken = readFileSync("../NETLIFY-TOKEN.txt", "utf8").split(/\r?\n/)[0].trim();
+  const netlifyTokenPath = existsSync(join(SHOPEE_ROOT, "NETLIFY-TOKEN.txt")) ? join(SHOPEE_ROOT, "NETLIFY-TOKEN.txt") : join(SHOPEE_ROOT, "NETLIFY_PERSONAL_ACCESS_TOKEN.txt");
+  const netlifyToken = readFileSync(netlifyTokenPath, "utf8").split(/\r?\n/)[0].trim();
   const secret = webhookSecret();
-  const apiKey = readFileSync("../VPS-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
-
+  const apiKey = readFileSync(join(SHOPEE_ROOT, "VPS-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
   const api = async (path, init = {}) => {
     const r = await fetch(`https://api.netlify.com/api/v1${path}`, {
       ...init,
@@ -57,7 +54,6 @@ if (mode === "env" && arg) {
     if (!r.ok) throw new Error(`netlify ${init.method || "GET"} ${path} -> ${r.status} ${(await r.text()).slice(0, 200)}`);
     return r.json();
   };
-
   const sites = await api("/sites");
   const site = sites.find((s) => s.url?.includes(arg.replace(/^https?:\/\//, "").replace(/\/$/, "")) || s.name === arg);
   if (!site) throw new Error(`no site matched ${arg}`);
@@ -69,7 +65,6 @@ if (mode === "env" && arg) {
   console.log(`env set: FREESTYLE_API_KEY + TELEGRAM_SECRET`);
   console.log(`ear url: ${site.url}/.netlify/functions/ear`);
 }
-
 if (mode === "switch" && arg) {
   const site = arg.replace(/\/$/, "");
   const ear = `${site}/.netlify/functions/ear`;
@@ -87,16 +82,13 @@ if (mode === "switch" && arg) {
   ).json();
   if (!set.ok) throw new Error(`setWebhook failed: ${JSON.stringify(set)}`);
   console.log(`webhook -> ${ear}`);
-
   const info = await (await fetch(`${TG}/getWebhookInfo`)).json();
   console.log(`webhook info: url=${info.result.url} pending=${info.result.pending_update_count} last_error=${info.result.last_error_message || "none"}`);
-
   await sh(`sudo systemctl disable --now shopee-brain && echo unit-stopped`);
   const ps = await sh("ps -eo pid,args | grep 'node bot/bot.mjs' | grep -v grep || true");
   console.log(`polling brain: ${ps.stdout.trim() || "none (good — the ear is the only listener now)"}`);
   console.log("SWITCH-DONE — paste one number in Telegram to verify");
 }
-
 if (mode === "rollback") {
   const del = await (await fetch(`${TG}/deleteWebhook`)).json();
   console.log(`deleteWebhook: ${del.ok ? "ok" : JSON.stringify(del)}`);
@@ -105,7 +97,6 @@ if (mode === "rollback") {
   console.log(`polling brain back: ${ps.stdout.trim()}`);
   console.log("ROLLBACK-DONE — polling mode again");
 }
-
 if (!["env", "switch", "rollback"].includes(mode)) {
   console.log("usage: node netlify-ear.mjs env <site-url> | switch <site-url> | rollback");
 }

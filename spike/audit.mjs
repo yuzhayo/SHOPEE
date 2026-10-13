@@ -1,37 +1,22 @@
-// Full read-only audit of the tracker VM: files, store, logs, quota, Sheet reachability.
-// Writes nothing on the VM (no state change). Secrets: only sizes/perms are printed.
 import { readFileSync } from "node:fs";
-
-process.env.FREESTYLE_API_KEY = readFileSync("../VPS-KEY.txt", "utf8").split(/\r?\n/)[0].trim();
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SHOPEE_ROOT = join(__dirname, "..");
+process.env.FREESTYLE_API_KEY = readFileSync(join(SHOPEE_ROOT, "VPS-KEY.txt"), "utf8").split(/\r?\n/)[0].trim();
 const { Freestyle } = await import("freestyle");
 const f = new Freestyle();
 const vm = f.vms.ref("vm-4e5fb8f51dbc4dd3a43b2cc2f23c7309");
 const ROOT = "/home/ubuntu/shopeefood-tracker";
-
 const run = async (label, command, limit = 4000) => {
   const r = await vm.exec({ command, timeoutMs: 30000 });
   const out = (r.stdout || "") + (r.stderr ? `\n[stderr] ${r.stderr}` : "");
   console.log(`\n===== ${label} (exit ${r.statusCode}) =====`);
   console.log(out.length > limit ? out.slice(0, limit) + `\n…[truncated ${out.length - limit} chars]` : out);
 };
-
 const d = await vm.data().catch((e) => ({ error: e.message }));
 console.log("===== vm.data =====");
-console.log(
-  JSON.stringify(
-    {
-      state: d.state,
-      idleTimeoutSeconds: d.idleTimeoutSeconds,
-      automaticRestart: d.automaticRestart,
-      autoDeleteSeconds: d.autoDeleteSeconds,
-      totalRunSeconds: d.totalRunSeconds,
-      lastNetworkActivity: d.lastNetworkActivity,
-    },
-    null,
-    1
-  )
-);
-
+console.log(JSON.stringify({ state: d.state, idleTimeoutSeconds: d.idleTimeoutSeconds, automaticRestart: d.automaticRestart, autoDeleteSeconds: d.autoDeleteSeconds, totalRunSeconds: d.totalRunSeconds, lastNetworkActivity: d.lastNetworkActivity }, null, 1));
 await run("tree + perms", `ls -la ${ROOT} ${ROOT}/bot ${ROOT}/config ${ROOT}/notebook ${ROOT}/logs`);
 await run("disk", `df -h / | tail -1; du -sh ${ROOT} ${ROOT}/notebook/screenshots 2>/dev/null`);
 await run("package versions", `node --version; tesseract --version 2>&1 | head -1; uptime`);
