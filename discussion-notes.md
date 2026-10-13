@@ -982,3 +982,41 @@ workflow itself (no local file transfer at all).
 Harness `tests/bot.test.mjs` rewritten: 63/63 green (T1/T2/T3/T4/T6/T7/T8/T9/T10/T11/T12
 exact strings, driver/customer in store + sheet push, all branches, all old rails kept).
 Per-order dates: NOT built (his "later").
+
+**Turn 48 outcome — SHIPPED, all green.**
+Harness 63/63 → pushed 34d0f55 → workflow deploy-bot.yml had one real bug (node
+--check rejects ".new" extension; gate correctly refused the swap, VM untouched) →
+fixed to .check.mjs → run 38363774643 success: "ear-mode-no-restart-needed,
+BOT-UPDATED 29511", VM file 29,511 B = local 29,511 B, contains NEW CUSTOMER template.
+Live ear test (unknown bare number, fake chat): 200 + VM log
+"reply check-norecord/norecord 6281000000001" — new decision code runs in production,
+no record created. Polling still off, webhook clean. Jack taps left: (1) Sheet script
+v3.2 re-paste (New version + Deploy), (2) real pastes (bare number + screenshot order +
+ban flow) to confirm replies + Sheet driver/customer columns.
+
+---
+
+**Turn 49 — Backfill feature requested (APPROACH ONLY, Jack: explain first, wait for "go").**
+
+Jack tested, DB live: Sheet v3.2 columns work, real orders carry driver/customer names.
+Gap: old rows have blank driver/customer cells (e.g. #530 test row, #531 real order
+from before v40). Request: valid screenshot+number → check DB first → fill any blank
+cells of that order from the new screenshot.
+
+Approach presented (no code touched): fill happens ONLY on the dup path (T3, incl.
+banned-dup T12) — the matched stored event gets blanks patched from fresh OCR, then the
+normal every-cycle push lets the Sheet self-heal rewrite that row (identity
+phone|number|time unchanged, v3.2 compare already covers driver/customer → zero taps,
+no script change). Rules: blanks-only (never overwrite), owner-only (T4 wrong-number
+pastes touch nothing), reply stays T3 (silent fill), everything logged. New orders,
+validity gate, templates, ear, webhook all untouched.
+
+---
+
+**Turn 50 — Backfill BUILT + SHIPPED (Jack said go).**
+
+`backfill(rec, ocr)` in bot.mjs: dup path only → matched event (id first, else number)
+→ blank driver/customer patched from fresh OCR → saveStore → normal push lets Sheet
+self-heal rewrite the row. Guards: blanks-only (S18b), owner-only (S18c T4 untouched),
+reply stays T3, fill logged as `backfill <phone> #<no>`. Harness 73/73 (S18a/b/c).
+RUNBOOK daily-use gained the re-paste line. Shipped via push → deploy-bot.yml.

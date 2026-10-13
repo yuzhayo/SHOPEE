@@ -30,6 +30,7 @@ Secrets (files only, never typed into chat): `VPS-KEY.txt` (VM API key),
 - **Log an order**: send a **screenshot + the number** → recorded once, replied once.
 - **Ban someone**: `/ban 0857xxxx reason` — or type `banned` in that row's **status** cell in the Sheet; the bot picks it up on the next paste.
 - **Unban**: `/unban 0857xxxx` or set the cell back to `not banned`.
+- **Complete blank cells**: re-paste an order's screenshot + number — empty driver/customer cells fill in by themselves (reply stays CHECKING).
 - If the bot ever seems quiet: send `/status` (polling mode) or just paste again (ear mode).
 
 ---

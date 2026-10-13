@@ -370,6 +370,62 @@ console.log("S17c banned number repeats the order -> T12 with history");
   check("still 1 event", store(root)["6284332221100"].events.length === 1);
 }
 
+console.log("S18a re-paste fills blank driver + customer, reply stays T3");
+{
+  const root = sandbox("s18a");
+  sheetRows = []; pushes.length = 0; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289090909090": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  const r = await runOnce(root, shotUpdate("089090909090"));
+  const t = lastReply();
+  checkExit(r);
+  check("still T3", t === "✅ 6289090909090 — CHECKING\norder already recorded\norder: #530\norder ID: 3300155108395520491\nhistory:\n#530 3300155108395520491", t.replace(/\n/g, " | "));
+  const ev = store(root)["6289090909090"].events[0];
+  check("blanks filled from the fresh shot", ev.driver === "RAHMAT FADLI" && ev.customer === "Nadya");
+  check("fill was logged", r.out.includes("backfill 6289090909090 #530"));
+  check("sheet push carries the filled names", pushes.at(-1).log.at(-1).driver === "RAHMAT FADLI" && pushes.at(-1).log.at(-1).customer === "Nadya");
+}
+
+console.log("S18b filled cells are never overwritten by a re-paste");
+{
+  const root = sandbox("s18b");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289191919191": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "ORIGINAL DRIVER", customer: "Original", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  const r = await runOnce(root, shotUpdate("089191919191"));
+  checkExit(r);
+  const ev = store(root)["6289191919191"].events[0];
+  check("original names kept", ev.driver === "ORIGINAL DRIVER" && ev.customer === "Original");
+  check("no backfill logged", !r.out.includes("backfill"));
+}
+
+console.log("S18c wrong-number paste never fills the owner's blanks");
+{
+  const root = sandbox("s18c");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289292929292": {
+      first: 1791804480000, last: 1791804480000, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "", customer: "", ts: 1791804480000, shot: "old.jpg", chat: 555, verdict: "new" }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root, shotUpdate("089393939393"));
+  check("T4 warning", lastReply().startsWith("⚠️ 6289393939393 — CHECKING"));
+  const ev = store(root)["6289292929292"].events[0];
+  check("owner blanks untouched", ev.driver === "" && ev.customer === "");
+}
+
 server.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

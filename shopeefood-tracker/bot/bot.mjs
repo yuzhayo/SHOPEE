@@ -164,6 +164,24 @@ function findOrder(rec, ocr) {
   return false;
 }
 
+// Backfill (turn 49): a re-pasted screenshot completes BLANK cells of the stored
+// order. Blanks only, owner only: never overwrites a filled cell, and the caller
+// only invokes it on the dup path, so another number's paste can't rewrite this
+// record. The enriched event rides the normal every-cycle push and the Sheet's
+// self-heal rewrites the row (identity phone|number|time is untouched).
+function backfill(rec, ocr) {
+  const ev = ocr.id
+    ? rec.events.find((e) => e.id === ocr.id)
+    : rec.events.find((e) => e.no === ocr.no);
+  if (!ev) return [];
+  const filled = [];
+  for (const f of ["driver", "customer"]) {
+    if (!ev[f] && ocr[f]) { ev[f] = ocr[f]; filled.push(`${f}=${ocr[f]}`); }
+  }
+  if (filled.length) saveStore();
+  return filled;
+}
+
 // P5: which phone does this order already belong to, if any (mis-paste guard)?
 function findOrderOwner(ocr) {
   if (!ocr || (!ocr.id && !ocr.no)) return null;
@@ -622,9 +640,12 @@ async function handleUpdate(u) {
   if (owner && owner !== phone)
     // mis-paste: the order is already booked under the right number -> book nothing
     return done("order-wrong-number", "checking", buildReply(phone, null, { kind: "wrong-owner", owner, ocr }));
-  if (dup)
+  if (dup) {
+    const filled = backfill(rec, ocr);
+    if (filled.length) log(`backfill ${phone} #${ocr.no}: ${filled.join(", ")}`);
     if (rec.banned) return done("check-dup", "banned", buildReply(phone, rec, { kind: "banned-check" }), rec);
     else return done("check-dup", "checking", buildReply(phone, rec, { kind: "dup", ocr }), rec);
+  }
 
   // brand-new order keys: NEW (unknown number) or RETURNING (known), banned still logged
   const wasKnown = !!rec && rec.events.length > 0;

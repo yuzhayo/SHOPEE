@@ -280,3 +280,8 @@ driver/customer extraction; Sheet v3.2 (+2 cols, self-healing); bot auto-deploy
 workflow (no PC needed after this). Harness 63/63. His taps after this: (1) Sheet
 script re-paste (v3.2), (2) real pastes to verify. Later: per-order dates, reply
 wording already locked T1–T3 (T4–T13 as built — he can still veto).
+
+**Update (turn 48 outcome) — v40 live on VM via GitHub (29,511 B verified), ear test
+green on new code. Left: his Sheet v3.2 re-paste + real pastes.**
+
+**Update (turn 50) — backfill live: re-paste fills blank driver/customer, nothing else moves.**
