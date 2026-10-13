@@ -137,9 +137,8 @@ even an edit made on github.com from your phone ships by itself.
 | Bot | `bot/bot.mjs` | `deploy-bot.yml` | repo secret `FREESTYLE_API_KEY`, var `VM_ID` |
 | Sheet script | `SHEET-SCRIPT.js` | **your one tap**: paste into Extensions → Apps Script → New version → Deploy | browser |
 
-**Sheet script v3.2 (one repaste, replaces v3):** the `orders` tab gains `driver` +
-`customer name` columns. The script rewrites the header itself AND shifts your
-existing rows right so old screenshots/chats stay under the right headings.
+**Sheet script v3.3 (one repaste, replaces v3.2):** honors the bot's row tombstones
+(`/delete`) and reports the cleaned count back. Same one-tap paste as before.
 
 ---
 
