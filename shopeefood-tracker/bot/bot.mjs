@@ -245,6 +245,14 @@ function findOrder(rec, ocr) {
   return false;
 }
 
+// Same match, but returns the stored event (for the dup-silence check below).
+function findEvent(rec, ocr) {
+  if (!rec || !ocr) return null;
+  if (ocr.id) return rec.events.find((e) => e.id === ocr.id) || null;
+  if (ocr.no) return rec.events.find((e) => e.no === ocr.no) || null;
+  return null;
+}
+
 // Backfill (turn 49): a re-pasted screenshot completes BLANK cells of the stored
 // order. Blanks only, owner only: never overwrites a filled cell, and the caller
 // only invokes it on the dup path, so another number's paste can't rewrite this
@@ -980,6 +988,19 @@ async function handleUpdate(u) {
   if (dup) {
     const filled = backfill(rec, ocr);
     if (filled.length) log(`backfill ${phone} #${ocr.no}: ${filled.join(", ")}`);
+    const ev = findEvent(rec, ocr);
+    const lastReply = ev ? (ev.repliedAt || ev.ts || 0) : 0;
+    // Ban notices always go out (ban state is high-signal); only plain
+    // checking dups are silenced.
+    if (ev && !rec.banned && now - lastReply < DUP_SILENCE_MS) {
+      // B: answered moments ago (webhook retry, double-tap send) — ack silently.
+      record([nowIso, phone, "check-dup", "suppressed",
+        rec.events.length, ocr.no || "", ocr.id || "", shot, chatId]);
+      log(`dup suppressed ${phone} #${ocr.no || ""} ${ocr.id || ""} (replied ${Math.round((now - lastReply) / 1000)}s ago)`);
+      await sheetPush();
+      return;
+    }
+    if (ev) { ev.repliedAt = now; saveStore(); }
     if (rec.banned) return done("check-dup", "banned", buildReply(phone, rec, { kind: "banned-check", ocr }), rec);
     else return done("check-dup", "checking", buildReply(phone, rec, { kind: "dup", ocr }), rec);
   }
@@ -996,7 +1017,7 @@ async function handleUpdate(u) {
   const verdictNow = rec.banned ? "banned" : wasKnown ? "returning" : "new";
   const newEvent = {
     no: ocr.no, id: ocr.id, driver: ocr.driver, customer: ocr.customer,
-    ts: now, shot, chat: chatId, verdict: verdictNow,
+    ts: now, shot, chat: chatId, verdict: verdictNow, repliedAt: now,
   };
   rec.events.push(newEvent);
   rec.last = now;
@@ -1056,6 +1077,10 @@ async function main() {
 // polling (no flag): dev/interim — deleteWebhook + getUpdates loop.
 // --once (production): one Telegram update on stdin, answer, exit.
 const STALE_SECONDS = 900; // never answer a paste that sat in Telegram for hours
+// Dup-silence window (retry-loop guard): a re-delivery of an order we already
+// answered recently is acked silently — the identical reply adds nothing and
+// each reprocess costs a full OCR + Sheet cycle. Older re-pastes still reply.
+const DUP_SILENCE_MS = 10 * 60 * 1000;
 
 // Exit cleanly: set the code, let stdout flush, then leave. Exiting mid-write
 // truncates the last log line (Linux) and aborts libuv outright (Windows).

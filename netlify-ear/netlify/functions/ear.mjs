@@ -1,12 +1,17 @@
-// ear.mjs — the doorbell (Phase 6) — v3.4 PATCHED
+// ear.mjs — the doorbell (Phase 6) — v3.5 ACK-FIRST
+// Ack-first contract: validate -> launch the VM exec detached (202) -> 200 to
+// Telegram immediately. The bot's reply goes via sendMessage from the VM, so
+// the ear never waits for OCR/Sheet. 500 ONLY when the launch itself failed
+// (then Telegram retrying later is correct — nothing ran yet).
 
 const API = process.env.FREESTYLE_API || "https://api.freestyle.sh";
 const VM_ID = process.env.VM_ID || "vm-4e5fb8f51dbc4dd3a43b2cc2f23c7309";
 const ROOT = process.env.TRACKER_ROOT || "/home/ubuntu/shopeefood-tracker";
 const NODE = process.env.TRACKER_NODE || "/usr/local/bin/node";
 
-const EXEC_TIMEOUT_MS = 9000;
-const FETCH_TIMEOUT_MS = 10000;
+const EXEC_TIMEOUT_MS = 60000; // server-side budget: the VM run finishes on its own, we don't wait for it
+const FETCH_TIMEOUT_MS = 10000; // just long enough to get the launch confirmation (202 Accepted)
+const BACKGROUND_AFTER_SECS = 3; // ask the API to detach the exec from our connection after 3s
 const MAX_BODY_BYTES = 20000;
 
 const json = (status, body) =>
@@ -50,13 +55,24 @@ export default async (req) => {
   try {
     res = await fetch(`${API}/v5/vms/${VM_ID}/exec-await`, {
       method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+        // Detach the exec from this connection: the API keeps running it
+        // server-side (cold boot, OCR, Sheet sync) and answers 202 now.
+        // We ack Telegram immediately, so it never retries into a dup storm.
+        "x-freestyle-background-after-secs": String(BACKGROUND_AFTER_SECS),
+      },
       body: JSON.stringify({ command, timeoutMs: EXEC_TIMEOUT_MS }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (e) {
     return json(500, { ok: false, error: `freestyle unreachable: ${e.message}` });
   }
+
+  // 202 = launch confirmed, work detached and running on the VM.
+  // Ack Telegram NOW (200) — the bot's own reply goes via sendMessage later.
+  if (res.status === 202) return json(200, { ok: true, accepted: true, update_id: update.update_id });
 
   if (!res.ok) {
     const t = await res.text();

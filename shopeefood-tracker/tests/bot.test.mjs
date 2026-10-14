@@ -150,15 +150,16 @@ const rootA = sandbox("flow");
   check("sheet log row carries driver + customer", lg.verdict === "new" && lg.driver === "RAHMAT FADLI" && lg.customer === "Nadya", JSON.stringify(lg));
 }
 
-console.log("S3 same screenshot again = duplicate -> T3");
+console.log("S3 same screenshot again = duplicate -> silent (answered seconds ago)");
 {
   sent.length = 0;
   const r = await runOnce(rootA, shotUpdate("081112223333"));
-  const t = lastReply();
   checkExit(r);
-  check("T3 exact", t === "✅ 6281112223333 — CHECKING\norder already recorded\norder: #530\norder ID: 3300155108395520491\nhistory:\n#530 3300155108395520491", t.replace(/\n/g, " | "));
+  check("recent dup: silent, no second reply", sent.length === 0, `sent=${sent.length}`);
+  check("suppressed is logged", r.out.includes("dup suppressed"), r.out.split("\n").filter((l) => l.includes("dup")).join(" | "));
   check("still 1 event (no double count)", store(rootA)["6281112223333"].events.length === 1);
   check("TSV action = check-dup", tsv(rootA).at(-1).split("\t")[2] === "check-dup");
+  check("TSV verdict = suppressed", tsv(rootA).at(-1).split("\t")[3] === "suppressed");
 }
 
 console.log("S4 mis-paste: same order under a different number (P5) -> T4");
@@ -728,6 +729,37 @@ console.log("S23b /all shows all-time totals incl unique + banned people");
     lastReply().includes("orders: 4 · new: 1 · returning: 2 · banned orders: 1") &&
     lastReply().includes("banned people: 1"),
     lastReply().replace(/\n/g, " | "));
+}
+
+console.log("S30 dup-silence: recent re-delivery is acked silently, old re-paste still replies");
+{
+  const root = sandbox("s30");
+  sheetRows = []; sent.length = 0;
+  const now = Date.now();
+  writeFileSync(join(root, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: now, last: now, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "RAHMAT FADLI", customer: "Nadya", ts: now, shot: "a.jpg", chat: 555, verdict: "new", repliedAt: now }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  const r = await runOnce(root, shotUpdate("089595959595"));
+  checkExit(r);
+  check("recent dup: silent, no second reply", sent.length === 0, `sent=${sent.length}`);
+  check("suppressed is logged", r.out.includes("dup suppressed"), r.out.split("\n").filter((l) => l.includes("dup")).join(" | "));
+  console.log("S30b answered-long-ago re-paste still replies");
+  const root2 = sandbox("s30b");
+  sheetRows = []; sent.length = 0;
+  writeFileSync(join(root2, "notebook", "customers.json"), JSON.stringify({
+    "6289595959595": {
+      first: now, last: now, banned: false, banReason: "", banDate: 0,
+      events: [{ no: "530", id: "3300155108395520491", driver: "RAHMAT FADLI", customer: "Nadya", ts: now, shot: "a.jpg", chat: 555, verdict: "new", repliedAt: now - 11 * 60 * 1000 }],
+      pushedStatus: "not banned", pushedReason: "",
+    },
+  }));
+  await runOnce(root2, shotUpdate("089595959595"));
+  const t30 = lastReply();
+  check("old dup: T3 exact", t30 === "✅ 6289595959595 — CHECKING\norder already recorded\norder: #530\norder ID: 3300155108395520491\nhistory:\n#530 3300155108395520491", t30.replace(/\n/g, " | "));
 }
 
 console.log("S24 repeat-offender line appears from the 2nd banned order");
